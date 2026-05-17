@@ -1,0 +1,6 @@
+#include "../../Flutter/Flutter-Debug.xcconfig"
+#include "Warnings.xcconfig"
+
+// Build output outside iCloud Drive (fixes com.apple.fileprovider.fpfs#P codesign issue)
+SYMROOT = /tmp/tvonline_build
+OBJROOT = /tmp/tvonline_build/Intermediates
