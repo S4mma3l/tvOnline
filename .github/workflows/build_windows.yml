@@ -3,7 +3,7 @@ name: Build Windows
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Permite lanzarlo manualmente desde GitHub
+  workflow_dispatch:
 
 jobs:
   build-windows:
@@ -30,9 +30,9 @@ jobs:
         shell: powershell
         run: |
           $source = "build\windows\x64\runner\Release"
-          $dest   = "tvOnline-Windows.zip"
+          $dest = "tvOnline-Windows.zip"
           Compress-Archive -Path "$source\*" -DestinationPath $dest
-          Write-Host "✓ Packaged: $dest"
+          Write-Host "Packaged successfully: $dest"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
