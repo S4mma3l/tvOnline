@@ -33,8 +33,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Account section
-          _SectionHeader(title: 'Cuenta'),
+          // Mi cuenta
+          _SectionHeader(title: 'Mi cuenta'),
+          _OptionTile(
+            icon: Icons.manage_accounts_rounded,
+            label: 'Perfil y suscripción',
+            value: 'Ver estado',
+            onTap: () => context.push('/profile'),
+          ),
+          _OptionTile(
+            icon: Icons.lightbulb_rounded,
+            label: 'Sugerir película o serie',
+            value: 'Buzón',
+            onTap: () => context.push('/suggestions'),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Servidor IPTV
+          _SectionHeader(title: 'Servidor IPTV'),
           _InfoTile(
             icon: Icons.person_rounded,
             label: 'Usuario',

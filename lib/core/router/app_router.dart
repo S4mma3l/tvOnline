@@ -12,6 +12,9 @@ import '../../features/player/screens/player_screen.dart';
 import '../../features/search/screens/search_screen.dart';
 import '../../features/live/screens/live_screen.dart';
 import '../../features/settings/screens/settings_screen.dart';
+import '../../features/profile/screens/user_profile_screen.dart';
+import '../../features/suggestions/screens/suggestions_screen.dart';
+import '../../features/admin/screens/admin_screen.dart';
 import '../../shared/widgets/main_scaffold.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -123,6 +126,21 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         name: 'settings',
         builder: (_, __) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/profile',
+        name: 'profile',
+        builder: (_, __) => const UserProfileScreen(),
+      ),
+      GoRoute(
+        path: '/suggestions',
+        name: 'suggestions',
+        builder: (_, __) => const SuggestionsScreen(),
+      ),
+      GoRoute(
+        path: '/admin',
+        name: 'admin',
+        builder: (_, __) => const AdminScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

@@ -1,6 +1,36 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
+
+// CWE-312: Simple XOR obfuscation for stored credentials.
+// Prevents credentials from being trivially readable in storage files.
+// Not a substitute for OS-level secure storage (use flutter_secure_storage for production).
+String _obfuscate(String value) {
+  const key = 'tv0nL!n3K3y#2026';
+  final bytes = utf8.encode(value);
+  final keyBytes = utf8.encode(key);
+  final result = List<int>.generate(
+    bytes.length,
+    (i) => bytes[i] ^ keyBytes[i % keyBytes.length],
+  );
+  return base64Encode(result);
+}
+
+String _deobfuscate(String value) {
+  try {
+    final bytes = base64Decode(value);
+    const key = 'tv0nL!n3K3y#2026';
+    final keyBytes = utf8.encode(key);
+    final result = List<int>.generate(
+      bytes.length,
+      (i) => bytes[i] ^ keyBytes[i % keyBytes.length],
+    );
+    return utf8.decode(result);
+  } catch (_) {
+    return value; // Fallback for legacy plaintext values
+  }
+}
 
 class AppStorage {
   static SharedPreferences? _prefs;
@@ -16,20 +46,36 @@ class AppStorage {
 
   // ── Server config ─────────────────────────────────────────────────────────
 
-  static String? get serverUrl => _p.getString(AppConstants.keyServerUrl);
-  static String? get username => _p.getString(AppConstants.keyUsername);
-  static String? get password => _p.getString(AppConstants.keyPassword);
+  // CWE-312: credentials stored obfuscated
+  static String? get serverUrl {
+    final v = _p.getString(AppConstants.keyServerUrl);
+    return v != null ? _deobfuscate(v) : null;
+  }
+
+  static String? get username {
+    final v = _p.getString(AppConstants.keyUsername);
+    return v != null ? _deobfuscate(v) : null;
+  }
+
+  static String? get password {
+    final v = _p.getString(AppConstants.keyPassword);
+    return v != null ? _deobfuscate(v) : null;
+  }
 
   static Future<void> saveServerConfig({
     required String url,
     required String user,
     required String pass,
   }) async {
+    final cleanUrl = url.trimRight().replaceAll(RegExp(r'/$'), '');
+    // CWE-20: validate URL format before saving
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      throw ArgumentError('URL must start with http:// or https://');
+    }
     await Future.wait([
-      _p.setString(AppConstants.keyServerUrl,
-          url.trimRight().replaceAll(RegExp(r'/$'), '')),
-      _p.setString(AppConstants.keyUsername, user.trim()),
-      _p.setString(AppConstants.keyPassword, pass.trim()),
+      _p.setString(AppConstants.keyServerUrl, _obfuscate(cleanUrl)),
+      _p.setString(AppConstants.keyUsername, _obfuscate(user.trim())),
+      _p.setString(AppConstants.keyPassword, _obfuscate(pass.trim())),
     ]);
   }
 
