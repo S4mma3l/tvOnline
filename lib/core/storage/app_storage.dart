@@ -7,7 +7,7 @@ import '../constants/app_constants.dart';
 // Prevents credentials from being trivially readable in storage files.
 // Not a substitute for OS-level secure storage (use flutter_secure_storage for production).
 String _obfuscate(String value) {
-  const key = 'tv0nL!n3K3y#2026';
+  const key = String.fromEnvironment('STORAGE_OBFUSCATION_KEY', defaultValue: 'tv0nL!n3K3y#2026');
   final bytes = utf8.encode(value);
   final keyBytes = utf8.encode(key);
   final result = List<int>.generate(
@@ -20,7 +20,7 @@ String _obfuscate(String value) {
 String _deobfuscate(String value) {
   try {
     final bytes = base64Decode(value);
-    const key = 'tv0nL!n3K3y#2026';
+    const key = String.fromEnvironment('STORAGE_OBFUSCATION_KEY', defaultValue: 'tv0nL!n3K3y#2026');
     final keyBytes = utf8.encode(key);
     final result = List<int>.generate(
       bytes.length,

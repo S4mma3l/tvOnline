@@ -20,11 +20,22 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Create env.json from GitHub Secrets
+        shell: powershell
+        run: |
+          $env_content = @{
+            SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+            SUPABASE_ANON_KEY = "${{ secrets.SUPABASE_ANON_KEY }}"
+            STORAGE_OBFUSCATION_KEY = "${{ secrets.STORAGE_OBFUSCATION_KEY }}"
+          } | ConvertTo-Json
+          Set-Content -Path "env.json" -Value $env_content
+          Write-Host "env.json created from secrets"
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build Windows
-        run: flutter build windows --release
+        run: flutter build windows --release --dart-define-from-file=env.json
 
       - name: Package as ZIP
         shell: powershell

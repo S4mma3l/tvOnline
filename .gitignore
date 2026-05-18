@@ -1,3 +1,9 @@
+# Secrets — NEVER commit these
+env.json
+.env
+.env.*
+*.env
+
 # Flutter/Dart
 .dart_tool/
 .flutter-plugins

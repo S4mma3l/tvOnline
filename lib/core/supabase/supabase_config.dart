@@ -1,14 +1,12 @@
-// Supabase project configuration — tvonline-backend
+// Values injected at build time via --dart-define-from-file=env.json
+// Never hardcode credentials here. See env.example.json for the required keys.
 class SupabaseConfig {
-  static const String url = 'https://mltdegusepgyvniqsock.supabase.co';
+  static const String url =
+      String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+
   static const String anonKey =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
-      '.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sdGRlZ3VzZXBneXZuaXFzb2NrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMTYzMDEsImV4cCI6MjA5NDY5MjMwMX0'
-      '.heW56vD_EXWdnYyQXNIZdgaUiB4vGjER4usocOT4eJM';
+      String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
 
-  // Storage bucket for payment proofs
   static const String proofsBucket = 'payment-proofs';
-
-  // Admin email — receives notifications
   static const String adminEmail = 'azazelvatercr@gmail.com';
 }
