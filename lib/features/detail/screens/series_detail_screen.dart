@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/storage/app_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../shared/models/series_model.dart';
@@ -179,8 +180,14 @@ class _SeriesDetailScreenState extends ConsumerState<SeriesDetailScreen> {
                         ? '${config.serverUrl}/series/${config.username}/${config.password}/${ep.id}.${ep.containerExtension}'
                         : '';
                     final epIdxInFlat = allEpisodesFlat.indexOf(ep);
+                    final prog = AppStorage.getWatchProgress('series_${ep.id}');
+                    final epProgress = prog != null
+                        ? (prog['position'] as int? ?? 0) /
+                            ((prog['duration'] as int? ?? 1).clamp(1, 999999))
+                        : null;
                     return _EpisodeTile(
                       episode: ep,
+                      progress: epProgress,
                       onTap: () => context.push('/player', extra: {
                         'url': streamUrl,
                         'title': '$title - T${ep.season}:E${ep.episodeNum} ${ep.title}',
@@ -258,71 +265,159 @@ class _SeasonSelector extends StatelessWidget {
 
 class _EpisodeTile extends StatelessWidget {
   final SeriesEpisode episode;
+  final double? progress; // 0.0–1.0, null = not watched
   final VoidCallback onTap;
 
-  const _EpisodeTile({required this.episode, required this.onTap});
+  const _EpisodeTile({
+    required this.episode,
+    required this.onTap,
+    this.progress,
+  });
+
+  bool get _watched => (progress ?? 0) >= 0.9;
+  bool get _inProgress => (progress ?? 0) >= 0.05 && !_watched;
+
+  String _remaining(Map<String, dynamic>? prog) {
+    if (prog == null) return '';
+    final pos = prog['position'] as int? ?? 0;
+    final dur = prog['duration'] as int? ?? 0;
+    final rem = dur - pos;
+    if (rem <= 0) return '';
+    if (rem >= 3600) return '${rem ~/ 3600}h ${(rem % 3600) ~/ 60}m';
+    if (rem >= 60) return '${rem ~/ 60}m restantes';
+    return '${rem}s restantes';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final prog = AppStorage.getWatchProgress('series_${episode.id}');
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: AppColors.card,
+          color: _watched
+              ? AppColors.success.withValues(alpha: 0.06)
+              : AppColors.card,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.cardHover, width: 0.5),
+          border: Border.all(
+            color: _watched
+                ? AppColors.success.withValues(alpha: 0.3)
+                : _inProgress
+                    ? AppColors.primary.withValues(alpha: 0.3)
+                    : AppColors.cardHover,
+            width: 0.8,
+          ),
         ),
-        child: Row(
+        child: Column(
           children: [
-            // Episode number
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  '${episode.episodeNum ?? '?'}',
-                  style: AppTextStyles.headlineSmall,
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            // Title & duration
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
                 children: [
-                  Text(
-                    episode.title,
-                    style: AppTextStyles.titleMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (episode.durationFormatted.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(episode.durationFormatted,
-                        style: AppTextStyles.bodySmall),
-                  ],
-                  if (episode.plot != null && episode.plot!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      episode.plot!,
-                      style: AppTextStyles.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  // Episode number bubble
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _watched
+                          ? AppColors.success.withValues(alpha: 0.15)
+                          : _inProgress
+                              ? AppColors.primary.withValues(alpha: 0.12)
+                              : AppColors.background,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ],
+                    child: Center(
+                      child: _watched
+                          ? const Icon(Icons.check_rounded,
+                              color: AppColors.success, size: 22)
+                          : Text(
+                              '${episode.episodeNum ?? '?'}',
+                              style: AppTextStyles.headlineSmall.copyWith(
+                                color: _inProgress
+                                    ? AppColors.primary
+                                    : null,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  // Title, duration, remaining
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          episode.title,
+                          style: AppTextStyles.titleMedium.copyWith(
+                            color: _watched
+                                ? AppColors.textSecondary
+                                : null,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (episode.durationFormatted.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(episode.durationFormatted,
+                              style: AppTextStyles.bodySmall),
+                        ],
+                        if (_inProgress && prog != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            _remaining(prog),
+                            style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.primary),
+                          ),
+                        ],
+                        if (_watched) ...[
+                          const SizedBox(height: 3),
+                          Text('Visto',
+                              style: AppTextStyles.bodySmall
+                                  .copyWith(color: AppColors.success)),
+                        ],
+                        if (!_watched &&
+                            !_inProgress &&
+                            episode.plot != null &&
+                            episode.plot!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            episode.plot!,
+                            style: AppTextStyles.bodySmall,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Icon(
+                    _watched
+                        ? Icons.replay_rounded
+                        : Icons.play_circle_rounded,
+                    size: 36,
+                    color: _watched ? AppColors.textMuted : AppColors.primary,
+                  ),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
-            const Icon(Icons.play_circle_rounded,
-                size: 36, color: AppColors.primary),
+            // Progress bar for in-progress episodes
+            if (_inProgress && progress != null)
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
+                ),
+                child: LinearProgressIndicator(
+                  value: progress!.clamp(0.0, 1.0),
+                  minHeight: 3,
+                  backgroundColor: AppColors.surface,
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                ),
+              ),
           ],
         ),
       ),
