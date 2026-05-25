@@ -17,6 +17,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
   final String? poster;
   final String type;
   final int streamId;
+  final List<Map<String, dynamic>>? episodeList;
+  final int? episodeIndex;
 
   const PlayerScreen({
     super.key,
@@ -26,6 +28,8 @@ class PlayerScreen extends ConsumerStatefulWidget {
     this.poster,
     this.type = 'vod',
     this.streamId = 0,
+    this.episodeList,
+    this.episodeIndex,
   });
 
   @override
@@ -42,8 +46,30 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
   bool _controlsVisible = true;
   bool _trackSettingsRestored = false;
+  bool _episodeCompleted = false;
   Timer? _hideTimer;
+  Timer? _autoAdvanceTimer;
   final List<StreamSubscription> _subs = [];
+
+  // Current episode state (mutable for in-player navigation)
+  late String _currentUrl;
+  late String _currentTitle;
+  late String _currentWatchKey;
+  String? _currentPoster;
+  late int _currentStreamId;
+  int _episodeIdx = -1;
+  List<Map<String, dynamic>> _episodeList = [];
+
+  // Auto-advance overlay
+  bool _showAutoAdvance = false;
+  int _autoAdvanceCountdown = 5;
+
+  bool get _hasNextEpisode =>
+      _episodeList.isNotEmpty &&
+      _episodeIdx >= 0 &&
+      _episodeIdx < _episodeList.length - 1;
+  bool get _hasPrevEpisode =>
+      _episodeList.isNotEmpty && _episodeIdx > 0;
 
   // ── Init ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +92,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       parent: _animCtrl,
       curve: Curves.easeInOut,
     );
+
+    _currentUrl = widget.streamUrl;
+    _currentTitle = widget.title;
+    _currentWatchKey = widget.watchKey;
+    _currentPoster = widget.poster;
+    _currentStreamId = widget.streamId;
+    _episodeIdx = widget.episodeIndex ?? -1;
+    _episodeList = widget.episodeList ?? [];
 
     _player = Player(
       configuration: const PlayerConfiguration(
@@ -96,12 +130,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       // Web or platform doesn't support MPV properties
     }
 
-    final saved = AppStorage.getWatchProgress(widget.watchKey);
+    final saved = AppStorage.getWatchProgress(_currentWatchKey);
     final startPos = saved != null
         ? Duration(seconds: (saved['position'] as int? ?? 0))
         : Duration.zero;
 
-    await _player.open(Media(widget.streamUrl,
+    await _player.open(Media(_currentUrl,
         start: startPos.inSeconds > 10 ? startPos : Duration.zero));
 
     _scheduleHide();
@@ -111,18 +145,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
       final dur = _player.state.duration.inSeconds;
       if (dur > 0 && pos.inSeconds % 10 == 0 && pos.inSeconds > 0) {
         AppStorage.saveWatchProgress(
-          key: widget.watchKey,
+          key: _currentWatchKey,
           positionSeconds: pos.inSeconds,
           durationSeconds: dur,
         );
         // Save to rich history only for non-live content
         if (widget.type != 'live') {
           AppStorage.addToHistory(WatchHistoryEntry(
-            watchKey: widget.watchKey,
-            title: widget.title,
-            poster: widget.poster,
+            watchKey: _currentWatchKey,
+            title: _currentTitle,
+            poster: _currentPoster,
             type: widget.type,
-            streamId: widget.streamId,
+            streamId: _currentStreamId,
             positionSeconds: pos.inSeconds,
             durationSeconds: dur,
             updatedAt: DateTime.now(),
@@ -138,10 +172,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
         _restoreTrackSettings(tracks);
       }
     }));
+
+    // Auto-advance to next episode when current one completes
+    _subs.add(_player.stream.completed.listen((completed) {
+      if (completed && !_episodeCompleted && widget.type == 'series' &&
+          _hasNextEpisode && mounted) {
+        _episodeCompleted = true;
+        _startAutoAdvance();
+      }
+      if (!completed) _episodeCompleted = false;
+    }));
   }
 
   void _restoreTrackSettings(Tracks tracks) {
-    final saved = AppStorage.getTrackSettings(widget.watchKey);
+    final saved = AppStorage.getTrackSettings(_currentWatchKey);
     if (saved == null) return;
 
     // Restore audio track
@@ -166,14 +210,75 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     }
   }
 
+  // ── Episode navigation ────────────────────────────────────────────────────
+
+  void _goToEpisode(int idx) {
+    if (idx < 0 || idx >= _episodeList.length) return;
+    _saveProgress();
+    _autoAdvanceTimer?.cancel();
+
+    final ep = _episodeList[idx];
+    final newUrl = ep['url'] as String;
+    final newWatchKey = ep['watchKey'] as String;
+
+    final saved = AppStorage.getWatchProgress(newWatchKey);
+    final startPos = saved != null
+        ? Duration(seconds: (saved['position'] as int? ?? 0))
+        : Duration.zero;
+
+    setState(() {
+      _episodeIdx = idx;
+      _currentUrl = newUrl;
+      _currentTitle = ep['title'] as String;
+      _currentWatchKey = newWatchKey;
+      _currentPoster = ep['poster'] as String?;
+      _currentStreamId = ep['streamId'] as int? ?? 0;
+      _trackSettingsRestored = false;
+      _episodeCompleted = false;
+      _showAutoAdvance = false;
+    });
+
+    _player.open(Media(newUrl,
+        start: startPos.inSeconds > 10 ? startPos : Duration.zero));
+    _scheduleHide();
+  }
+
+  void _startAutoAdvance() {
+    if (!mounted) return;
+    setState(() {
+      _showAutoAdvance = true;
+      _autoAdvanceCountdown = 5;
+    });
+    _autoAdvanceTimer?.cancel();
+    _autoAdvanceTimer =
+        Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      if (_autoAdvanceCountdown <= 1) {
+        t.cancel();
+        _goToEpisode(_episodeIdx + 1);
+      } else {
+        setState(() => _autoAdvanceCountdown--);
+      }
+    });
+  }
+
+  void _cancelAutoAdvance() {
+    _autoAdvanceTimer?.cancel();
+    if (mounted) setState(() => _showAutoAdvance = false);
+  }
+
   // ── Dispose ───────────────────────────────────────────────────────────────
 
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _autoAdvanceTimer?.cancel();
     _focusNode.dispose();
     _animCtrl.dispose();
-    for (final s in _subs) s.cancel();
+    for (final s in _subs) { s.cancel(); }
     _saveProgress();
     _player.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -186,17 +291,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final dur = _player.state.duration.inSeconds;
     if (pos > 0) {
       AppStorage.saveWatchProgress(
-        key: widget.watchKey,
+        key: _currentWatchKey,
         positionSeconds: pos,
         durationSeconds: dur,
       );
       if (widget.type != 'live' && dur > 0) {
         AppStorage.addToHistory(WatchHistoryEntry(
-          watchKey: widget.watchKey,
-          title: widget.title,
-          poster: widget.poster,
+          watchKey: _currentWatchKey,
+          title: _currentTitle,
+          poster: _currentPoster,
           type: widget.type,
-          streamId: widget.streamId,
+          streamId: _currentStreamId,
           positionSeconds: pos,
           durationSeconds: dur,
           updatedAt: DateTime.now(),
@@ -211,7 +316,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
     final audio = _player.state.track.audio;
     final subtitle = _player.state.track.subtitle;
     AppStorage.saveTrackSettings(
-      widget.watchKey,
+      _currentWatchKey,
       ContentTrackSettings(
         audioTrackId: audio.id,
         audioLanguage: audio.language,
@@ -258,6 +363,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
   // ── Actions ───────────────────────────────────────────────────────────────
 
   void _exit() {
+    _autoAdvanceTimer?.cancel();
     _saveProgress();
     context.pop();
   }
@@ -357,12 +463,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                   ignoring: !_controlsVisible,
                   child: _ControlsOverlay(
                     player: _player,
-                    title: widget.title,
+                    title: _currentTitle,
                     onBack: _exit,
                     onSeek: _seekBy,
                     onActivity: _onActivity,
                     onTracks: _openTracks,
                     onBackgroundTap: _onBackgroundTap,
+                    hasPrev: _hasPrevEpisode,
+                    hasNext: _hasNextEpisode,
+                    onPrevEpisode: _hasPrevEpisode
+                        ? () => _goToEpisode(_episodeIdx - 1)
+                        : null,
+                    onNextEpisode: _hasNextEpisode
+                        ? () => _goToEpisode(_episodeIdx + 1)
+                        : null,
                   ),
                 ),
               ),
@@ -375,6 +489,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
 
               // ── Buffering spinner ──────────────────────────────────────
               _BufferingOverlay(player: _player),
+
+              // ── Auto-advance overlay ───────────────────────────────────
+              if (_showAutoAdvance)
+                Positioned(
+                  bottom: 80,
+                  right: 20,
+                  child: _AutoAdvanceOverlay(
+                    countdown: _autoAdvanceCountdown,
+                    onPlayNow: () => _goToEpisode(_episodeIdx + 1),
+                    onCancel: _cancelAutoAdvance,
+                  ),
+                ),
             ],
           ),
         ),
@@ -484,6 +610,79 @@ class _BufferingOverlay extends StatelessWidget {
   }
 }
 
+// ── Auto-advance overlay ──────────────────────────────────────────────────────
+
+class _AutoAdvanceOverlay extends StatelessWidget {
+  final int countdown;
+  final VoidCallback onPlayNow;
+  final VoidCallback onCancel;
+
+  const _AutoAdvanceOverlay({
+    required this.countdown,
+    required this.onPlayNow,
+    required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.skip_next_rounded,
+                  color: Colors.white70, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Siguiente episodio en $countdown s',
+                style: AppTextStyles.bodyMedium.copyWith(color: Colors.white70),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: onCancel,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white60,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                child: const Text('Cancelar'),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: onPlayNow,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: const Text('Reproducir ahora'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Full controls overlay ─────────────────────────────────────────────────────
 
 class _ControlsOverlay extends StatelessWidget {
@@ -494,6 +693,10 @@ class _ControlsOverlay extends StatelessWidget {
   final VoidCallback onActivity;
   final VoidCallback onTracks;
   final VoidCallback onBackgroundTap;
+  final bool hasPrev;
+  final bool hasNext;
+  final VoidCallback? onPrevEpisode;
+  final VoidCallback? onNextEpisode;
 
   const _ControlsOverlay({
     required this.player,
@@ -503,6 +706,10 @@ class _ControlsOverlay extends StatelessWidget {
     required this.onActivity,
     required this.onTracks,
     required this.onBackgroundTap,
+    required this.hasPrev,
+    required this.hasNext,
+    this.onPrevEpisode,
+    this.onNextEpisode,
   });
 
   @override
@@ -533,7 +740,14 @@ class _ControlsOverlay extends StatelessWidget {
               ),
               const Spacer(),
               _CenterControls(
-                  player: player, onSeek: onSeek, onActivity: onActivity),
+                player: player,
+                onSeek: onSeek,
+                onActivity: onActivity,
+                hasPrev: hasPrev,
+                hasNext: hasNext,
+                onPrevEpisode: onPrevEpisode,
+                onNextEpisode: onNextEpisode,
+              ),
               const Spacer(),
               _ProgressSection(player: player, onActivity: onActivity),
             ],
@@ -633,9 +847,19 @@ class _CenterControls extends StatelessWidget {
   final Player player;
   final void Function(Duration) onSeek;
   final VoidCallback onActivity;
+  final bool hasPrev;
+  final bool hasNext;
+  final VoidCallback? onPrevEpisode;
+  final VoidCallback? onNextEpisode;
 
   const _CenterControls({
-    required this.player, required this.onSeek, required this.onActivity,
+    required this.player,
+    required this.onSeek,
+    required this.onActivity,
+    required this.hasPrev,
+    required this.hasNext,
+    this.onPrevEpisode,
+    this.onNextEpisode,
   });
 
   @override
@@ -654,6 +878,16 @@ class _CenterControls extends StatelessWidget {
               return Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // Previous episode button (fixed width to keep layout stable)
+                  SizedBox(
+                    width: 56,
+                    child: hasPrev
+                        ? _EpisodeNavIcon(
+                            icon: Icons.skip_previous_rounded,
+                            onTap: onPrevEpisode ?? () {},
+                          )
+                        : null,
+                  ),
                   _SeekIcon(
                     icon: Icons.replay_10_rounded,
                     onTap: () => onSeek(const Duration(seconds: -10)),
@@ -691,6 +925,16 @@ class _CenterControls extends StatelessWidget {
                     icon: Icons.forward_10_rounded,
                     onTap: () => onSeek(const Duration(seconds: 10)),
                   ),
+                  // Next episode button (fixed width to keep layout stable)
+                  SizedBox(
+                    width: 56,
+                    child: hasNext
+                        ? _EpisodeNavIcon(
+                            icon: Icons.skip_next_rounded,
+                            onTap: onNextEpisode ?? () {},
+                          )
+                        : null,
+                  ),
                 ],
               );
             },
@@ -712,6 +956,21 @@ class _SeekIcon extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Icon(icon, color: Colors.white, size: 46),
+        ),
+      );
+}
+
+class _EpisodeNavIcon extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _EpisodeNavIcon({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(9),
+          child: Icon(icon, color: Colors.white, size: 38),
         ),
       );
 }

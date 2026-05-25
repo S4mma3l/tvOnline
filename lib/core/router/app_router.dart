@@ -119,6 +119,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             poster: extra['poster'] as String?,
             type: extra['type'] as String? ?? 'vod',
             streamId: extra['streamId'] as int? ?? 0,
+            episodeList: extra['episodeList'] != null
+                ? List<Map<String, dynamic>>.from(
+                    (extra['episodeList'] as List)
+                        .map((e) => Map<String, dynamic>.from(e as Map)))
+                : null,
+            episodeIndex: extra['episodeIndex'] as int?,
           );
         },
       ),

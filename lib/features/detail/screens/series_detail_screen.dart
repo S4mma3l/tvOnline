@@ -54,6 +54,25 @@ class _SeriesDetailScreenState extends ConsumerState<SeriesDetailScreen> {
 
           final currentEpisodes = seasons[_selectedSeason] ?? [];
 
+          // Flat episode list sorted by season then episode number
+          final sortedSeasonKeys = seasons.keys.toList()..sort();
+          final allEpisodesFlat =
+              sortedSeasonKeys.expand((s) => seasons[s] ?? []).toList();
+          final episodeListForRouter = config != null
+              ? allEpisodesFlat
+                  .map((e) => <String, dynamic>{
+                        'url':
+                            '${config.serverUrl}/series/${config.username}/${config.password}/${e.id}.${e.containerExtension}',
+                        'title':
+                            '$title - T${e.season}:E${e.episodeNum} ${e.title}',
+                        'watchKey': 'series_${e.id}',
+                        'poster': e.movieImage ?? cover,
+                        'type': 'series',
+                        'streamId': e.id,
+                      })
+                  .toList()
+              : <Map<String, dynamic>>[];
+
           return CustomScrollView(
             slivers: [
               SliverAppBar(
@@ -161,6 +180,7 @@ class _SeriesDetailScreenState extends ConsumerState<SeriesDetailScreen> {
                     final streamUrl = config != null
                         ? '${config.serverUrl}/series/${config.username}/${config.password}/${ep.id}.${ep.containerExtension}'
                         : '';
+                    final epIdxInFlat = allEpisodesFlat.indexOf(ep);
                     return _EpisodeTile(
                       episode: ep,
                       onTap: () => context.push('/player', extra: {
@@ -170,6 +190,8 @@ class _SeriesDetailScreenState extends ConsumerState<SeriesDetailScreen> {
                         'poster': ep.movieImage ?? cover,
                         'type': 'series',
                         'streamId': ep.id,
+                        'episodeList': episodeListForRouter,
+                        'episodeIndex': epIdxInFlat,
                       }),
                     );
                   },
