@@ -17,7 +17,7 @@ permissions:
 env:
   FLUTTER_VERSION: '3.41.9'
 
-# ── macOS → builds macOS .app + iOS xcarchive ─────────────────────────────────
+# ── macOS → builds macOS .app ─────────────────────────────────────────────────
 jobs:
   build-macos:
     name: macOS build
@@ -32,18 +32,18 @@ jobs:
           cache: true
 
       - name: Create env.json
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          STORAGE_OBFUSCATION_KEY: ${{ secrets.STORAGE_OBFUSCATION_KEY }}
         run: |
-          cat > env.json << EOF
+          cat > env.json << 'ENVEOF'
           {
-            "SUPABASE_URL": "$SUPABASE_URL",
-            "SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY",
-            "STORAGE_OBFUSCATION_KEY": "$STORAGE_OBFUSCATION_KEY"
+            "SUPABASE_URL": "SUPABASE_URL_PLACEHOLDER",
+            "SUPABASE_ANON_KEY": "ANON_KEY_PLACEHOLDER",
+            "STORAGE_OBFUSCATION_KEY": "OBF_KEY_PLACEHOLDER"
           }
-          EOF
+          ENVEOF
+          # Replace placeholders with actual secrets
+          sed -i '' "s|SUPABASE_URL_PLACEHOLDER|${{ secrets.SUPABASE_URL }}|g" env.json
+          sed -i '' "s|ANON_KEY_PLACEHOLDER|${{ secrets.SUPABASE_ANON_KEY }}|g" env.json
+          sed -i '' "s|OBF_KEY_PLACEHOLDER|${{ secrets.STORAGE_OBFUSCATION_KEY }}|g" env.json
 
       - name: Install macOS pods
         run: cd macos && pod install --repo-update
@@ -55,7 +55,6 @@ jobs:
         run: |
           cd build/macos/Build/Products/Release
           zip -r "$GITHUB_WORKSPACE/tvOnline-macOS.zip" tvonline.app
-          echo "macOS app size: $(du -sh tvonline.app | cut -f1)"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -84,40 +83,39 @@ jobs:
           cache: true
 
       - name: Create env.json
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          STORAGE_OBFUSCATION_KEY: ${{ secrets.STORAGE_OBFUSCATION_KEY }}
         run: |
           cat > env.json << EOF
           {
-            "SUPABASE_URL": "$SUPABASE_URL",
-            "SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY",
-            "STORAGE_OBFUSCATION_KEY": "$STORAGE_OBFUSCATION_KEY"
+            "SUPABASE_URL": "${{ secrets.SUPABASE_URL }}",
+            "SUPABASE_ANON_KEY": "${{ secrets.SUPABASE_ANON_KEY }}",
+            "STORAGE_OBFUSCATION_KEY": "${{ secrets.STORAGE_OBFUSCATION_KEY }}"
           }
           EOF
 
-      - name: Set up Android keystore (if configured)
-        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+      - name: Set up Android keystore
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          echo "$KEYSTORE_B64" | base64 -d > android/app/release.jks
-          cat > android/key.properties << EOF
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/release.jks
+            cat > android/key.properties << EOF
           storePassword=$KEY_STORE_PASSWORD
           keyPassword=$KEY_PASSWORD
           keyAlias=$KEY_ALIAS
           storeFile=release.jks
           EOF
+            echo "✓ Keystore configurado para firma release"
+          else
+            echo "⚠ Sin keystore: usando firma debug"
+          fi
 
       - name: Build Android APK
         run: |
           flutter build apk --release --dart-define-from-file=env.json
           mv build/app/outputs/flutter-apk/app-release.apk tvOnline-Android.apk
-          echo "APK size: $(du -sh tvOnline-Android.apk | cut -f1)"
 
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
@@ -140,19 +138,14 @@ jobs:
           cache: true
 
       - name: Create env.json
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          STORAGE_OBFUSCATION_KEY: ${{ secrets.STORAGE_OBFUSCATION_KEY }}
         shell: pwsh
         run: |
-          @"
-          {
-            "SUPABASE_URL": "$env:SUPABASE_URL",
-            "SUPABASE_ANON_KEY": "$env:SUPABASE_ANON_KEY",
-            "STORAGE_OBFUSCATION_KEY": "$env:STORAGE_OBFUSCATION_KEY"
-          }
-          "@ | Set-Content -Encoding UTF8 env.json
+          $json = @{
+            SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+            SUPABASE_ANON_KEY = "${{ secrets.SUPABASE_ANON_KEY }}"
+            STORAGE_OBFUSCATION_KEY = "${{ secrets.STORAGE_OBFUSCATION_KEY }}"
+          } | ConvertTo-Json
+          Set-Content -Path env.json -Value $json -Encoding UTF8
 
       - name: Enable Windows desktop
         run: flutter config --enable-windows-desktop
@@ -163,9 +156,7 @@ jobs:
       - name: Zip Windows release
         shell: pwsh
         run: |
-          $src = "build\windows\x64\runner\Release"
-          Compress-Archive -Path "$src\*" -DestinationPath "tvOnline-Windows.zip"
-          Write-Host "ZIP size: $((Get-Item tvOnline-Windows.zip).Length / 1MB) MB"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "tvOnline-Windows.zip"
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -217,57 +208,53 @@ jobs:
 
             ## 📱 iOS — iPhone / iPad
 
-            > Requiere tener el iPhone conectado al Mac con Xcode instalado.
+            > Requiere conexión al Mac con Xcode instalado (cuenta de desarrollador Apple gratuita).
 
             1. Descarga **tvOnline.ipa** desde los assets de este release
-               *(El IPA se sube manualmente con el script `scripts/release_ios.sh`)*
-            2. Instala con:
-               ```bash
-               xcrun devicectl device install app --device TU_DEVICE_ID tvOnline.ipa
-               ```
-               Para encontrar tu device ID:
+            2. Conecta el iPhone al Mac y ejecuta:
                ```bash
                xcrun devicectl list devices
+               xcrun devicectl device install app --device TU_DEVICE_ID tvOnline.ipa
                ```
-            3. En tu iPhone, ve a **Ajustes → General → VPN y gestión de dispositivos** y confía en el desarrollador.
+            3. En el iPhone: **Ajustes → General → VPN y gestión de dispositivos** → confía en el desarrollador
 
             ---
 
             ## 🍎 macOS
 
-            1. Descarga **tvOnline-macOS.zip**
-            2. Descomprime el archivo (doble clic)
-            3. **Primera vez:** haz **clic derecho → Abrir** en `tvonline.app` y confirma en el diálogo de seguridad
-            4. A partir de ahí puedes abrirla normalmente o moverla a `/Applications`
+            1. Descarga **tvOnline-macOS.zip** y descomprime
+            2. **Primera vez:** haz **clic derecho → Abrir** en `tvonline.app`
+            3. Confirma en el diálogo de seguridad de Gatekeeper
+            4. Opcionalmente mueve la app a `/Applications`
 
-            > Si macOS bloquea la app: ve a **Ajustes del Sistema → Privacidad y seguridad** y pulsa "Abrir de todas formas".
+            > Si sigue bloqueada: **Ajustes del Sistema → Privacidad y seguridad → Abrir de todas formas**
 
             ---
 
             ## 🤖 Android
 
-            1. Descarga **tvOnline-Android.apk** en tu dispositivo Android
-            2. Abre el archivo APK (puede pedirte permiso para instalar apps de fuentes desconocidas)
-            3. En caso de bloqueo: ve a **Ajustes → Aplicaciones → Instalar apps desconocidas** y habilítalo para tu navegador/gestor de archivos
-            4. Instala y abre tvOnline
+            1. En tu Android: **Ajustes → Aplicaciones → Instalar apps desconocidas** → actívalo para tu navegador
+            2. Descarga **tvOnline-Android.apk** directamente en el dispositivo
+            3. Toca el archivo descargado e instala
 
-            > Probado en Android 10+. Requiere conexión a Internet.
+            > Requiere Android 6.0 (API 23) o superior.
 
             ---
 
             ## 🪟 Windows
 
-            1. Descarga **tvOnline-Windows.zip**
-            2. Descomprime en la carpeta que prefieras (ej. `C:\Program Files\tvOnline\`)
-            3. Ejecuta **tvonline.exe**
-            4. Si Windows Defender SmartScreen lo bloquea: pulsa "Más información" → "Ejecutar de todas formas"
+            1. Descarga **tvOnline-Windows.zip** y descomprime en la ubicación que prefieras
+            2. Ejecuta **tvonline.exe**
+            3. Si Windows Defender SmartScreen lo bloquea: **Más información → Ejecutar de todas formas**
 
-            > Requiere Windows 10 versión 1903 o superior (64-bit).
+            > Requiere Windows 10 versión 1903+ (64-bit). No necesita instalación.
 
             ---
 
             ## ⚙️ Primer inicio
 
-            En todos los dispositivos, la primera vez se mostrará la pantalla de configuración donde debes ingresar:
+            La primera vez aparecerá la pantalla de configuración:
             - **URL del servidor** IPTV (ej. `http://tuservidor.com:8080`)
             - **Usuario** y **contraseña** de tu cuenta IPTV
+
+            Una vez configurado, el acceso queda guardado de forma segura en el dispositivo.
