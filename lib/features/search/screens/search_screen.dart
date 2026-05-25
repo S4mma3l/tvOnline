@@ -8,6 +8,11 @@ import '../../home/providers/home_provider.dart';
 
 final _searchQueryProvider = StateProvider<String>((ref) => '');
 
+enum _SearchFilter { all, movies, series }
+
+final _searchFilterProvider =
+    StateProvider<_SearchFilter>((ref) => _SearchFilter.all);
+
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
 
@@ -35,11 +40,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final query = ref.watch(_searchQueryProvider);
+    final filter = ref.watch(_searchFilterProvider);
     final allVod = ref.watch(allVodProvider).valueOrNull ?? [];
     final allSeries = ref.watch(allSeriesProvider).valueOrNull ?? [];
 
     final q = query.toLowerCase();
-    final vodResults = q.isEmpty
+
+    final vodResults = (q.isEmpty || filter == _SearchFilter.series)
         ? <dynamic>[]
         : allVod
             .where((v) =>
@@ -50,7 +57,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             .take(50)
             .toList();
 
-    final seriesResults = q.isEmpty
+    final seriesResults = (q.isEmpty || filter == _SearchFilter.movies)
         ? <dynamic>[]
         : allSeries
             .where((s) =>
@@ -66,36 +73,59 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           children: [
             // Search bar
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: TextField(
+                controller: _ctrl,
+                focusNode: _focus,
+                style: AppTextStyles.bodyLarge
+                    .copyWith(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Buscar películas, series, actores...',
+                  prefixIcon: const Icon(Icons.search_rounded,
+                      size: 22, color: AppColors.textMuted),
+                  suffixIcon: query.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded,
+                              size: 18, color: AppColors.textMuted),
+                          onPressed: () {
+                            _ctrl.clear();
+                            ref.read(_searchQueryProvider.notifier).state = '';
+                          },
+                        )
+                      : null,
+                ),
+                onChanged: (q) =>
+                    ref.read(_searchQueryProvider.notifier).state = q,
+              ),
+            ),
+
+            // Filter chips
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Row(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _ctrl,
-                      focusNode: _focus,
-                      style: AppTextStyles.bodyLarge
-                          .copyWith(color: AppColors.textPrimary),
-                      decoration: InputDecoration(
-                        hintText: 'Buscar películas, series, actores...',
-                        prefixIcon: const Icon(Icons.search_rounded,
-                            size: 22, color: AppColors.textMuted),
-                        suffixIcon: query.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.close_rounded,
-                                    size: 18,
-                                    color: AppColors.textMuted),
-                                onPressed: () {
-                                  _ctrl.clear();
-                                  ref
-                                      .read(_searchQueryProvider.notifier)
-                                      .state = '';
-                                },
-                              )
-                            : null,
-                      ),
-                      onChanged: (q) =>
-                          ref.read(_searchQueryProvider.notifier).state = q,
-                    ),
+                  _FilterChip(
+                    label: 'Todo',
+                    selected: filter == _SearchFilter.all,
+                    onTap: () => ref
+                        .read(_searchFilterProvider.notifier)
+                        .state = _SearchFilter.all,
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Películas',
+                    selected: filter == _SearchFilter.movies,
+                    onTap: () => ref
+                        .read(_searchFilterProvider.notifier)
+                        .state = _SearchFilter.movies,
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChip(
+                    label: 'Series',
+                    selected: filter == _SearchFilter.series,
+                    onTap: () => ref
+                        .read(_searchFilterProvider.notifier)
+                        .state = _SearchFilter.series,
                   ),
                 ],
               ),
@@ -104,7 +134,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             // Results
             Expanded(
               child: query.isEmpty
-                  ? _EmptySearch()
+                  ? const _EmptySearch()
                   : (vodResults.isEmpty && seriesResults.isEmpty)
                       ? _NoResults(query: query)
                       : _SearchResults(
@@ -119,7 +149,48 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 }
 
+class _FilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.primary
+              : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.cardHover,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTextStyles.badge.copyWith(
+            color: selected ? Colors.white : AppColors.textMuted,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _EmptySearch extends StatelessWidget {
+  const _EmptySearch();
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -127,7 +198,7 @@ class _EmptySearch extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.search_rounded,
-              size: 64, color: AppColors.textMuted.withOpacity(0.4)),
+              size: 64, color: AppColors.textMuted.withValues(alpha:0.4)),
           const SizedBox(height: 16),
           const Text('Busca tu película favorita',
               style: AppTextStyles.headlineSmall),
@@ -189,7 +260,7 @@ class _SearchResults extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.15),
+                      color: AppColors.primary.withValues(alpha:0.15),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(

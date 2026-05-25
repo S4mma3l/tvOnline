@@ -44,6 +44,9 @@ dependencies:
   file_picker: ^8.1.7
   mime: ^2.0.0
 
+  # App info
+  package_info_plus: ^9.0.1
+
   # Utils
   intl: ^0.19.0
   url_launcher: ^6.3.0

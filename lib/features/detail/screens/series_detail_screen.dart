@@ -45,11 +45,9 @@ class _SeriesDetailScreenState extends ConsumerState<SeriesDetailScreen> {
           final year = info['releaseDate']?.toString() ?? '';
           final genre = info['genre']?.toString() ?? '';
 
-          // Set first available season
+          // Set first available season (synchronously when not yet set)
           if (seasons.isNotEmpty && !seasons.containsKey(_selectedSeason)) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              setState(() => _selectedSeason = seasons.keys.first);
-            });
+            _selectedSeason = (seasons.keys.toList()..sort()).first;
           }
 
           final currentEpisodes = seasons[_selectedSeason] ?? [];

@@ -240,8 +240,9 @@ class HomeScreen extends ConsumerWidget {
       ),
       actions: [
         IconButton(
-          icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-          onPressed: () {},
+          icon: const Icon(Icons.bookmark_outline_rounded, color: Colors.white),
+          tooltip: 'Mi lista',
+          onPressed: () => context.push('/watchlist'),
         ),
         GestureDetector(
           onTap: () => context.push('/settings'),
@@ -407,10 +408,25 @@ class _ContinueWatchingCarouselState
                 axis: Axis.horizontal,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 10),
-                  child: _ContinueCard(
-                    entry: entry,
-                    onNavigate: () => _navigate(entry),
-                    onDeleteTap: () => _remove(index),
+                  child: Dismissible(
+                    key: ValueKey(entry.watchKey),
+                    direction: DismissDirection.up,
+                    onDismissed: (_) => _remove(index),
+                    background: Container(
+                      alignment: Alignment.topCenter,
+                      padding: const EdgeInsets.only(top: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.delete_rounded,
+                          color: Colors.white, size: 22),
+                    ),
+                    child: _ContinueCard(
+                      entry: entry,
+                      onNavigate: () => _navigate(entry),
+                      onDeleteTap: () => _remove(index),
+                    ),
                   ),
                 ),
               );
@@ -552,12 +568,12 @@ class _ContinueCard extends StatelessWidget {
 }
 
 
-class _ErrorBanner extends StatelessWidget {
+class _ErrorBanner extends ConsumerWidget {
   final String error;
   const _ErrorBanner({required this.error});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.5,
       color: AppColors.surface,
@@ -566,13 +582,34 @@ class _ErrorBanner extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Icon(Icons.wifi_off_rounded,
-                size: 48, color: AppColors.textMuted),
+                size: 56, color: AppColors.textMuted),
             const SizedBox(height: 16),
             const Text('No se pudo cargar el contenido',
                 style: AppTextStyles.headlineSmall),
             const SizedBox(height: 8),
-            Text(error,
-                style: AppTextStyles.bodySmall, textAlign: TextAlign.center),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Text(error,
+                  style: AppTextStyles.bodySmall,
+                  textAlign: TextAlign.center),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                ref.invalidate(allVodProvider);
+                ref.invalidate(allSeriesProvider);
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Reintentar'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
           ],
         ),
       ),

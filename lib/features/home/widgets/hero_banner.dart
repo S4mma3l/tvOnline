@@ -20,6 +20,7 @@ class _HeroBannerState extends State<HeroBanner> {
   late PageController _pageCtrl;
   int _current = 0;
   Timer? _timer;
+  Timer? _resumeTimer;
 
   @override
   void initState() {
@@ -29,6 +30,7 @@ class _HeroBannerState extends State<HeroBanner> {
   }
 
   void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 6), (_) {
       if (!mounted || widget.items.isEmpty) return;
       final next = (_current + 1) % widget.items.length;
@@ -40,9 +42,16 @@ class _HeroBannerState extends State<HeroBanner> {
     });
   }
 
+  void _pauseAndResume() {
+    _timer?.cancel();
+    _resumeTimer?.cancel();
+    _resumeTimer = Timer(const Duration(seconds: 8), _startTimer);
+  }
+
   @override
   void dispose() {
     _timer?.cancel();
+    _resumeTimer?.cancel();
     _pageCtrl.dispose();
     super.dispose();
   }
@@ -58,9 +67,15 @@ class _HeroBannerState extends State<HeroBanner> {
         children: [
           PageView.builder(
             controller: _pageCtrl,
-            onPageChanged: (i) => setState(() => _current = i),
+            onPageChanged: (i) {
+              setState(() => _current = i);
+              _pauseAndResume();
+            },
             itemCount: widget.items.length,
-            itemBuilder: (_, i) => _HeroBannerItem(item: widget.items[i]),
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: _pauseAndResume,
+              child: _HeroBannerItem(item: widget.items[i]),
+            ),
           ),
           // Bottom gradient to blend with background
           Positioned(
@@ -143,7 +158,7 @@ class _HeroBannerContent extends StatelessWidget {
             style: AppTextStyles.displayMedium.copyWith(
               shadows: [
                 Shadow(
-                    color: Colors.black.withOpacity(0.8),
+                    color: Colors.black.withValues(alpha:0.8),
                     blurRadius: 10,
                     offset: const Offset(0, 2)),
               ],
@@ -240,7 +255,7 @@ class _PlayButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withOpacity(0.4),
+              color: AppColors.primary.withValues(alpha:0.4),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -270,9 +285,9 @@ class _InfoButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
+          color: Colors.white.withValues(alpha:0.15),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
+          border: Border.all(color: Colors.white.withValues(alpha:0.2)),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
@@ -300,9 +315,9 @@ class _GenreTags extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.12),
+            color: Colors.white.withValues(alpha:0.12),
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
+            border: Border.all(color: Colors.white.withValues(alpha:0.2)),
           ),
           child: Text(tag, style: AppTextStyles.badge),
         );

@@ -15,7 +15,7 @@ class ServerConfigScreen extends ConsumerStatefulWidget {
 class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
-  final _urlCtrl = TextEditingController(text: 'https://fplay2.com:8443');
+  final _urlCtrl = TextEditingController();
   final _userCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscurePass = true;
@@ -139,7 +139,7 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.4),
+                color: AppColors.primary.withValues(alpha:0.4),
                 blurRadius: 30,
                 spreadRadius: 0,
                 offset: const Offset(0, 10),
@@ -181,8 +181,9 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen>
             ),
             validator: (v) {
               if (v == null || v.trim().isEmpty) return 'Ingresa la URL del servidor';
-              if (!v.trim().startsWith('http'))
+              if (!v.trim().startsWith('http')) {
                 return 'La URL debe comenzar con http:// o https://';
+              }
               return null;
             },
           ),
@@ -254,7 +255,7 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen>
             ? []
             : [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.35),
+                  color: AppColors.primary.withValues(alpha:0.35),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
                 ),
@@ -289,7 +290,7 @@ class _ServerConfigScreenState extends ConsumerState<ServerConfigScreen>
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: AppColors.card.withOpacity(0.5),
+            color: AppColors.card.withValues(alpha:0.5),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: AppColors.cardHover),
           ),

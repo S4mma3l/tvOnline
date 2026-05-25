@@ -1,10 +1,18 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/storage/app_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../home/providers/home_provider.dart';
+
+final _appVersionProvider = FutureProvider<String>((ref) async {
+  final info = await PackageInfo.fromPlatform();
+  return '${info.version} (${info.buildNumber})';
+});
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -21,12 +29,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(serverConfigProvider).valueOrNull;
+    final version = ref.watch(_appVersionProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Configuración'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
+          tooltip: 'Volver',
           onPressed: () => context.pop(),
         ),
       ),
@@ -34,7 +44,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           // Mi cuenta
-          _SectionHeader(title: 'Mi cuenta'),
+          const _SectionHeader(title: 'Mi cuenta'),
           _OptionTile(
             icon: Icons.manage_accounts_rounded,
             label: 'Perfil y suscripción',
@@ -47,11 +57,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             value: 'Buzón',
             onTap: () => context.push('/suggestions'),
           ),
+          _OptionTile(
+            icon: Icons.bookmark_rounded,
+            label: 'Mi lista',
+            value: 'Ver guardados',
+            onTap: () => context.push('/watchlist'),
+          ),
+          _OptionTile(
+            icon: Icons.history_rounded,
+            label: 'Historial',
+            value: 'Ver todo',
+            onTap: () => context.push('/history'),
+          ),
 
           const SizedBox(height: 24),
 
           // Servidor IPTV
-          _SectionHeader(title: 'Servidor IPTV'),
+          const _SectionHeader(title: 'Servidor IPTV'),
           _InfoTile(
             icon: Icons.person_rounded,
             label: 'Usuario',
@@ -75,9 +97,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          // Playback
-          _SectionHeader(title: 'Reproducción'),
-
+          // Reproducción
+          const _SectionHeader(title: 'Reproducción'),
           _OptionTile(
             icon: Icons.hd_rounded,
             label: 'Calidad de video',
@@ -99,7 +120,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               },
             ),
           ),
-
           _OptionTile(
             icon: Icons.subtitles_rounded,
             label: 'Subtítulos',
@@ -121,7 +141,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               },
             ),
           ),
-
           _OptionTile(
             icon: Icons.record_voice_over_rounded,
             label: 'Idioma de audio',
@@ -146,23 +165,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          // About
-          _SectionHeader(title: 'Acerca de'),
+          // Almacenamiento
+          const _SectionHeader(title: 'Almacenamiento'),
+          _ActionTile(
+            icon: Icons.cleaning_services_rounded,
+            label: 'Limpiar caché de imágenes',
+            onTap: () => _clearImageCache(context),
+          ),
+          _ActionTile(
+            icon: Icons.delete_sweep_rounded,
+            label: 'Borrar historial de reproducción',
+            onTap: () => _clearHistory(context),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Acerca de
+          const _SectionHeader(title: 'Acerca de'),
           _InfoTile(
             icon: Icons.info_rounded,
             label: 'Versión',
-            value: '1.0.0',
+            value: version.when(
+              data: (v) => v,
+              loading: () => '...',
+              error: (_, __) => '1.0.0',
+            ),
           ),
 
           const SizedBox(height: 32),
 
-          // Logout
+          // Cerrar sesión
           ElevatedButton.icon(
             onPressed: () => _showLogoutConfirm(context),
             icon: const Icon(Icons.logout_rounded),
             label: const Text('Cerrar sesión'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error.withOpacity(0.15),
+              backgroundColor: AppColors.error.withValues(alpha:0.15),
               foregroundColor: AppColors.error,
               side: const BorderSide(color: AppColors.error, width: 1),
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -202,8 +240,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: [
           const SizedBox(height: 12),
           Container(
-            width: 40,
-            height: 4,
+            width: 40, height: 4,
             decoration: BoxDecoration(
               color: AppColors.textMuted,
               borderRadius: BorderRadius.circular(2),
@@ -232,7 +269,73 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Future<void> _clearImageCache(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Limpiar caché'),
+        content: const Text(
+            'Se eliminarán las imágenes en caché. Se volverán a descargar cuando las necesites.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Limpiar',
+                style: TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await CachedNetworkImage.evictFromCache('');
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Caché de imágenes limpiada'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _clearHistory(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Borrar historial'),
+        content: const Text(
+            '¿Eliminar todo el historial de reproducción? No podrás recuperarlo.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Borrar todo',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await AppStorage.clearHistory();
+    ref.read(historyRefreshProvider.notifier).state++;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Historial borrado'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _showLogoutConfirm(BuildContext context) {
+    final router = GoRouter.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -248,10 +351,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             onPressed: () {
               Navigator.pop(ctx);
               ref.read(serverConfigProvider.notifier).disconnect().then((_) {
-                if (mounted) context.go('/setup');
+                if (mounted) router.go('/setup');
               });
             },
-            child: Text('Salir',
+            child: Text('Cerrar sesión',
                 style: TextStyle(color: AppColors.error)),
           ),
         ],
@@ -259,6 +362,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 }
+
+// ── Section header ────────────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -279,12 +384,18 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+// ── Info tile (read-only) ─────────────────────────────────────────────────────
+
 class _InfoTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
 
-  const _InfoTile({required this.icon, required this.label, required this.value});
+  const _InfoTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -299,15 +410,20 @@ class _InfoTile extends StatelessWidget {
         children: [
           Icon(icon, size: 20, color: AppColors.textMuted),
           const SizedBox(width: 14),
-          Expanded(
-            child: Text(label, style: AppTextStyles.titleMedium),
+          Expanded(child: Text(label, style: AppTextStyles.titleMedium)),
+          Flexible(
+            child: Text(value,
+                style: AppTextStyles.bodyMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
           ),
-          Text(value, style: AppTextStyles.bodyMedium),
         ],
       ),
     );
   }
 }
+
+// ── Option tile (tappable with chevron) ───────────────────────────────────────
 
 class _OptionTile extends StatelessWidget {
   final IconData icon;
@@ -341,6 +457,45 @@ class _OptionTile extends StatelessWidget {
             Expanded(child: Text(label, style: AppTextStyles.titleMedium)),
             Text(value, style: AppTextStyles.bodyMedium),
             const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded,
+                size: 20, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Action tile (destructive action) ─────────────────────────────────────────
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.cardHover, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: AppColors.textMuted),
+            const SizedBox(width: 14),
+            Expanded(child: Text(label, style: AppTextStyles.titleMedium)),
             const Icon(Icons.chevron_right_rounded,
                 size: 20, color: AppColors.textMuted),
           ],

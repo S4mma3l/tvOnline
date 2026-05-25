@@ -412,10 +412,24 @@ class _PaymentTabState extends ConsumerState<_PaymentTab> {
   }
 
   Future<void> _submit() async {
-    if (_amountCtrl.text.isEmpty || _proofFile == null) {
+    final rawAmount = _amountCtrl.text.trim().replaceAll(',', '.');
+    final amount = double.tryParse(rawAmount);
+
+    if (rawAmount.isEmpty || amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Completa el monto y adjunta el comprobante'),
+          content: Text('Ingresa un monto válido mayor a 0'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (_proofFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Adjunta el comprobante de pago'),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
         ),
@@ -427,7 +441,7 @@ class _PaymentTabState extends ConsumerState<_PaymentTab> {
     try {
       await SupabaseService.submitPayment(
         userId: widget.userId,
-        amount: double.parse(_amountCtrl.text.replaceAll(',', '.')),
+        amount: amount,
         currency: _currency,
         method: _method,
         reference: _referenceCtrl.text,
@@ -747,6 +761,7 @@ class _RegisterFormState extends ConsumerState<_RegisterForm> {
                     ? null
                     : () async {
                         if (!_form.currentState!.validate()) return;
+                        final messenger = ScaffoldMessenger.of(context);
                         setState(() => _loading = true);
                         try {
                           await ref
@@ -759,7 +774,7 @@ class _RegisterFormState extends ConsumerState<_RegisterForm> {
                           widget.onRegistered();
                         } catch (e) {
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
+                            messenger.showSnackBar(
                               SnackBar(content: Text('Error: $e')));
                           }
                         } finally {

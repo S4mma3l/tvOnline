@@ -15,6 +15,8 @@ import '../../features/settings/screens/settings_screen.dart';
 import '../../features/profile/screens/user_profile_screen.dart';
 import '../../features/suggestions/screens/suggestions_screen.dart';
 import '../../features/admin/screens/admin_screen.dart';
+import '../../features/watchlist/screens/watchlist_screen.dart';
+import '../../features/history/screens/history_screen.dart';
 import '../../shared/widgets/main_scaffold.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -146,7 +148,23 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin',
         name: 'admin',
+        redirect: (context, state) {
+          final config = ref.read(serverConfigProvider).valueOrNull;
+          final role = config?.userInfo?['user_info']?['role'] as String?;
+          if (role != 'admin') return '/';
+          return null;
+        },
         builder: (_, __) => const AdminScreen(),
+      ),
+      GoRoute(
+        path: '/watchlist',
+        name: 'watchlist',
+        builder: (_, __) => const WatchlistScreen(),
+      ),
+      GoRoute(
+        path: '/history',
+        name: 'history',
+        builder: (_, __) => const HistoryScreen(),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

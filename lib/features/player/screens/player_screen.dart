@@ -481,11 +481,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen>
                 ),
               ),
 
-              // ── Always-visible thin progress line ──────────────────────
-              Positioned(
-                bottom: 0, left: 0, right: 0,
-                child: _ThinProgress(player: _player, visible: !_controlsVisible),
-              ),
 
               // ── Buffering spinner ──────────────────────────────────────
               _BufferingOverlay(player: _player),
@@ -541,42 +536,6 @@ class _MouseActivityDetector extends StatelessWidget {
   }
 }
 
-// ── Thin progress bar (always visible when controls are hidden) ───────────────
-
-class _ThinProgress extends StatelessWidget {
-  final Player player;
-  final bool visible;
-  const _ThinProgress({required this.player, required this.visible});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      opacity: visible ? 0.45 : 0.0,
-      duration: const Duration(milliseconds: 400),
-      child: StreamBuilder(
-        stream: player.stream.position,
-        builder: (_, posSnap) {
-          return StreamBuilder(
-            stream: player.stream.duration,
-            builder: (_, durSnap) {
-              final pos = posSnap.data ?? Duration.zero;
-              final dur = durSnap.data ?? Duration.zero;
-              final progress = dur.inMilliseconds > 0
-                  ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
-                  : 0.0;
-              return LinearProgressIndicator(
-                value: progress,
-                minHeight: 3,
-                backgroundColor: Colors.white.withValues(alpha: 0.2),
-                valueColor: const AlwaysStoppedAnimation(AppColors.primary),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
 
 // ── Buffering overlay ─────────────────────────────────────────────────────────
 
@@ -975,13 +934,21 @@ class _EpisodeNavIcon extends StatelessWidget {
       );
 }
 
-// ── Progress section with buffer bar ─────────────────────────────────────────
+// ── Progress section with buffer bar + seek preview ──────────────────────────
 
-class _ProgressSection extends StatelessWidget {
+class _ProgressSection extends StatefulWidget {
   final Player player;
   final VoidCallback onActivity;
 
   const _ProgressSection({required this.player, required this.onActivity});
+
+  @override
+  State<_ProgressSection> createState() => _ProgressSectionState();
+}
+
+class _ProgressSectionState extends State<_ProgressSection> {
+  bool _dragging = false;
+  double _dragValue = 0.0;
 
   String _fmt(Duration d) {
     final h = d.inHours;
@@ -996,10 +963,10 @@ class _ProgressSection extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: () {},
       child: StreamBuilder(
-        stream: player.stream.position,
+        stream: widget.player.stream.position,
         builder: (_, posSnap) {
           return StreamBuilder(
-            stream: player.stream.duration,
+            stream: widget.player.stream.duration,
             builder: (_, durSnap) {
               final pos = posSnap.data ?? Duration.zero;
               final dur = durSnap.data ?? Duration.zero;
@@ -1007,14 +974,42 @@ class _ProgressSection extends StatelessWidget {
                   ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
                   : 0.0;
 
+              final displayValue = _dragging ? _dragValue : progress;
+              final previewPos = dur.inMilliseconds > 0
+                  ? Duration(
+                      milliseconds: (_dragValue * dur.inMilliseconds).round())
+                  : Duration.zero;
+
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Scrub preview label
+                    AnimatedOpacity(
+                      opacity: _dragging ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            _fmt(previewPos),
+                            style: AppTextStyles.bodyMedium
+                                .copyWith(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+
                     // Buffer + seek slider
                     StreamBuilder(
-                      stream: player.stream.buffer,
+                      stream: widget.player.stream.buffer,
                       builder: (_, bufSnap) {
                         final bufPos = bufSnap.data ?? Duration.zero;
                         final bufProgress = dur.inMilliseconds > 0
@@ -1059,17 +1054,26 @@ class _ProgressSection extends StatelessWidget {
                                   overlayColor: AppColors.primaryGlow,
                                 ),
                                 child: Slider(
-                                  value: progress,
-                                  onChangeStart: (_) =>
-                                      player.pause(),
+                                  value: displayValue,
+                                  onChangeStart: (v) {
+                                    setState(() {
+                                      _dragging = true;
+                                      _dragValue = v;
+                                    });
+                                    widget.player.pause();
+                                  },
                                   onChanged: (v) {
-                                    player.seek(Duration(
+                                    setState(() => _dragValue = v);
+                                    widget.onActivity();
+                                  },
+                                  onChangeEnd: (v) {
+                                    widget.player.seek(Duration(
                                         milliseconds:
                                             (v * dur.inMilliseconds)
                                                 .round()));
-                                    onActivity();
+                                    widget.player.play();
+                                    setState(() => _dragging = false);
                                   },
-                                  onChangeEnd: (_) => player.play(),
                                 ),
                               ),
                             ],
@@ -1084,9 +1088,11 @@ class _ProgressSection extends StatelessWidget {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(_fmt(pos),
-                              style: AppTextStyles.bodySmall
-                                  .copyWith(color: Colors.white70)),
+                          Text(
+                            _dragging ? _fmt(previewPos) : _fmt(pos),
+                            style: AppTextStyles.bodySmall
+                                .copyWith(color: Colors.white70),
+                          ),
                           Text(_fmt(dur),
                               style: AppTextStyles.bodySmall
                                   .copyWith(color: Colors.white70)),

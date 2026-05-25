@@ -113,14 +113,40 @@ class _SeriesCatalogScreenState extends ConsumerState<SeriesCatalogScreen> {
           error: (e, _) => Center(child: Text(e.toString())),
           data: (_) {
             if (filtered.isEmpty) {
-              return const Center(
+              return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.search_off_rounded,
-                        size: 48, color: AppColors.textMuted),
-                    SizedBox(height: 12),
-                    Text('Sin resultados', style: AppTextStyles.headlineSmall),
+                    const Icon(Icons.search_off_rounded,
+                        size: 56, color: AppColors.textMuted),
+                    const SizedBox(height: 16),
+                    const Text('Sin resultados',
+                        style: AppTextStyles.headlineSmall),
+                    const SizedBox(height: 8),
+                    Text(
+                      catalogState.searchQuery.isNotEmpty
+                          ? 'No encontramos series para "${catalogState.searchQuery}"'
+                          : 'No hay series en esta categoría',
+                      style: AppTextStyles.bodyMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                    if (catalogState.searchQuery.isNotEmpty ||
+                        catalogState.selectedCategoryId != null) ...[
+                      const SizedBox(height: 20),
+                      TextButton.icon(
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          ref
+                              .read(seriesCatalogStateProvider.notifier)
+                              .state = catalogState.copyWith(
+                            searchQuery: '',
+                            clearCategory: true,
+                          );
+                        },
+                        icon: const Icon(Icons.clear_rounded),
+                        label: const Text('Limpiar filtros'),
+                      ),
+                    ],
                   ],
                 ),
               );
