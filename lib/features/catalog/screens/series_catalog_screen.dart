@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/storage/app_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../shared/widgets/content_card.dart';
@@ -163,6 +164,14 @@ class _SeriesCatalogScreenState extends ConsumerState<SeriesCatalogScreen> {
               itemCount: filtered.length,
               itemBuilder: (_, i) {
                 final s = filtered[i];
+                // Find the most recent watched episode for this series
+                final lastEntry = AppStorage.watchHistory
+                    .where((e) =>
+                        e.type == 'series' && e.streamId == s.seriesId)
+                    .firstOrNull;
+                final progress = lastEntry != null && lastEntry.progress > 0
+                    ? lastEntry.progress
+                    : null;
                 return GridCard(
                   id: s.seriesId,
                   title: s.name,
@@ -172,6 +181,7 @@ class _SeriesCatalogScreenState extends ConsumerState<SeriesCatalogScreen> {
                       : null,
                   year: s.year,
                   type: 'series',
+                  progress: progress,
                   onTap: () => context.push('/series/${s.seriesId}'),
                 );
               },

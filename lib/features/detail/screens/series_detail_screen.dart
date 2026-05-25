@@ -66,7 +66,7 @@ class _SeriesDetailScreenState extends ConsumerState<SeriesDetailScreen> {
                         'watchKey': 'series_${e.id}',
                         'poster': e.movieImage ?? cover,
                         'type': 'series',
-                        'streamId': e.id,
+                        'streamId': widget.seriesId,
                       })
                   .toList()
               : <Map<String, dynamic>>[];
@@ -187,7 +187,7 @@ class _SeriesDetailScreenState extends ConsumerState<SeriesDetailScreen> {
                         'watchKey': 'series_${ep.id}',
                         'poster': ep.movieImage ?? cover,
                         'type': 'series',
-                        'streamId': ep.id,
+                        'streamId': widget.seriesId,
                         'episodeList': episodeListForRouter,
                         'episodeIndex': epIdxInFlat,
                       }),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../../core/storage/app_storage.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../shared/widgets/content_card.dart';
@@ -285,6 +286,12 @@ class _SearchResults extends StatelessWidget {
               delegate: SliverChildBuilderDelegate(
                 (_, i) {
                   final v = vodResults[i];
+                  final prog =
+                      AppStorage.getWatchProgress('vod_${v.streamId}');
+                  final progress = prog != null
+                      ? (prog['position'] as int? ?? 0) /
+                          ((prog['duration'] as int? ?? 1).clamp(1, 999999))
+                      : null;
                   return GridCard(
                     id: v.streamId,
                     title: v.name,
@@ -294,6 +301,7 @@ class _SearchResults extends StatelessWidget {
                         : null,
                     year: v.year,
                     type: 'movie',
+                    progress: progress,
                     onTap: () => context.push('/movie/${v.streamId}'),
                   );
                 },
@@ -341,6 +349,13 @@ class _SearchResults extends StatelessWidget {
               delegate: SliverChildBuilderDelegate(
                 (_, i) {
                   final s = seriesResults[i];
+                  final lastEntry = AppStorage.watchHistory
+                      .where((e) =>
+                          e.type == 'series' && e.streamId == s.seriesId)
+                      .firstOrNull;
+                  final progress = lastEntry != null && lastEntry.progress > 0
+                      ? lastEntry.progress
+                      : null;
                   return GridCard(
                     id: s.seriesId,
                     title: s.name,
@@ -350,6 +365,7 @@ class _SearchResults extends StatelessWidget {
                         : null,
                     year: s.year,
                     type: 'series',
+                    progress: progress,
                     onTap: () => context.push('/series/${s.seriesId}'),
                   );
                 },

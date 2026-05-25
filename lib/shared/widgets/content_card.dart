@@ -192,12 +192,43 @@ class _GridCardState extends State<GridCard>
                 ),
               ),
 
-              // Rating badge top-right
-              if (widget.rating != null && widget.rating!.isNotEmpty)
+              // Rating badge top-right (hidden when "VISTO" badge takes its place)
+              if ((widget.progress == null || widget.progress! < 0.9) &&
+                  widget.rating != null &&
+                  widget.rating!.isNotEmpty)
                 Positioned(
                   top: 7,
                   right: 7,
                   child: _RatingBadge(rating: widget.rating!),
+                ),
+
+              // "VISTO" badge top-right when finished (≥ 90%)
+              if (widget.progress != null && widget.progress! >= 0.9)
+                Positioned(
+                  top: 7,
+                  right: 7,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_rounded,
+                            size: 10, color: Colors.white),
+                        SizedBox(width: 2),
+                        Text('VISTO',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5)),
+                      ],
+                    ),
+                  ),
                 ),
 
               // Series badge top-left
