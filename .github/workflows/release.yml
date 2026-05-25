@@ -1,0 +1,273 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.1)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.41.9'
+
+# ── macOS → builds macOS .app + iOS xcarchive ─────────────────────────────────
+jobs:
+  build-macos:
+    name: macOS build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Create env.json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          STORAGE_OBFUSCATION_KEY: ${{ secrets.STORAGE_OBFUSCATION_KEY }}
+        run: |
+          cat > env.json << EOF
+          {
+            "SUPABASE_URL": "$SUPABASE_URL",
+            "SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY",
+            "STORAGE_OBFUSCATION_KEY": "$STORAGE_OBFUSCATION_KEY"
+          }
+          EOF
+
+      - name: Install macOS pods
+        run: cd macos && pod install --repo-update
+
+      - name: Build macOS
+        run: flutter build macos --dart-define-from-file=env.json
+
+      - name: Zip macOS app
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -r "$GITHUB_WORKSPACE/tvOnline-macOS.zip" tvonline.app
+          echo "macOS app size: $(du -sh tvonline.app | cut -f1)"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: tvOnline-macOS.zip
+          retention-days: 1
+
+# ── Ubuntu → Android APK ───────────────────────────────────────────────────────
+  build-android:
+    name: Android build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Create env.json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          STORAGE_OBFUSCATION_KEY: ${{ secrets.STORAGE_OBFUSCATION_KEY }}
+        run: |
+          cat > env.json << EOF
+          {
+            "SUPABASE_URL": "$SUPABASE_URL",
+            "SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY",
+            "STORAGE_OBFUSCATION_KEY": "$STORAGE_OBFUSCATION_KEY"
+          }
+          EOF
+
+      - name: Set up Android keystore (if configured)
+        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > android/app/release.jks
+          cat > android/key.properties << EOF
+          storePassword=$KEY_STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=release.jks
+          EOF
+
+      - name: Build Android APK
+        run: |
+          flutter build apk --release --dart-define-from-file=env.json
+          mv build/app/outputs/flutter-apk/app-release.apk tvOnline-Android.apk
+          echo "APK size: $(du -sh tvOnline-Android.apk | cut -f1)"
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: tvOnline-Android.apk
+          retention-days: 1
+
+# ── Windows ────────────────────────────────────────────────────────────────────
+  build-windows:
+    name: Windows build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Create env.json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          STORAGE_OBFUSCATION_KEY: ${{ secrets.STORAGE_OBFUSCATION_KEY }}
+        shell: pwsh
+        run: |
+          @"
+          {
+            "SUPABASE_URL": "$env:SUPABASE_URL",
+            "SUPABASE_ANON_KEY": "$env:SUPABASE_ANON_KEY",
+            "STORAGE_OBFUSCATION_KEY": "$env:STORAGE_OBFUSCATION_KEY"
+          }
+          "@ | Set-Content -Encoding UTF8 env.json
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows
+        run: flutter build windows --dart-define-from-file=env.json
+
+      - name: Zip Windows release
+        shell: pwsh
+        run: |
+          $src = "build\windows\x64\runner\Release"
+          Compress-Archive -Path "$src\*" -DestinationPath "tvOnline-Windows.zip"
+          Write-Host "ZIP size: $((Get-Item tvOnline-Windows.zip).Length / 1MB) MB"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: tvOnline-Windows.zip
+          retention-days: 1
+
+# ── Create GitHub Release with all artifacts ───────────────────────────────────
+  release:
+    name: Publish release
+    needs: [build-macos, build-android, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: tvOnline ${{ steps.tag.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/tvOnline-macOS.zip
+            artifacts/tvOnline-Android.apk
+            artifacts/tvOnline-Windows.zip
+          body: |
+            # tvOnline ${{ steps.tag.outputs.tag }}
+
+            Aplicación de streaming IPTV disponible para iOS, macOS, Android y Windows.
+
+            ---
+
+            ## 📱 iOS — iPhone / iPad
+
+            > Requiere tener el iPhone conectado al Mac con Xcode instalado.
+
+            1. Descarga **tvOnline.ipa** desde los assets de este release
+               *(El IPA se sube manualmente con el script `scripts/release_ios.sh`)*
+            2. Instala con:
+               ```bash
+               xcrun devicectl device install app --device TU_DEVICE_ID tvOnline.ipa
+               ```
+               Para encontrar tu device ID:
+               ```bash
+               xcrun devicectl list devices
+               ```
+            3. En tu iPhone, ve a **Ajustes → General → VPN y gestión de dispositivos** y confía en el desarrollador.
+
+            ---
+
+            ## 🍎 macOS
+
+            1. Descarga **tvOnline-macOS.zip**
+            2. Descomprime el archivo (doble clic)
+            3. **Primera vez:** haz **clic derecho → Abrir** en `tvonline.app` y confirma en el diálogo de seguridad
+            4. A partir de ahí puedes abrirla normalmente o moverla a `/Applications`
+
+            > Si macOS bloquea la app: ve a **Ajustes del Sistema → Privacidad y seguridad** y pulsa "Abrir de todas formas".
+
+            ---
+
+            ## 🤖 Android
+
+            1. Descarga **tvOnline-Android.apk** en tu dispositivo Android
+            2. Abre el archivo APK (puede pedirte permiso para instalar apps de fuentes desconocidas)
+            3. En caso de bloqueo: ve a **Ajustes → Aplicaciones → Instalar apps desconocidas** y habilítalo para tu navegador/gestor de archivos
+            4. Instala y abre tvOnline
+
+            > Probado en Android 10+. Requiere conexión a Internet.
+
+            ---
+
+            ## 🪟 Windows
+
+            1. Descarga **tvOnline-Windows.zip**
+            2. Descomprime en la carpeta que prefieras (ej. `C:\Program Files\tvOnline\`)
+            3. Ejecuta **tvonline.exe**
+            4. Si Windows Defender SmartScreen lo bloquea: pulsa "Más información" → "Ejecutar de todas formas"
+
+            > Requiere Windows 10 versión 1903 o superior (64-bit).
+
+            ---
+
+            ## ⚙️ Primer inicio
+
+            En todos los dispositivos, la primera vez se mostrará la pantalla de configuración donde debes ingresar:
+            - **URL del servidor** IPTV (ej. `http://tuservidor.com:8080`)
+            - **Usuario** y **contraseña** de tu cuenta IPTV

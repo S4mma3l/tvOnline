@@ -4,6 +4,11 @@ env.json
 .env.*
 *.env
 
+# Android signing — NEVER commit these
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
+
 # Flutter/Dart
 .dart_tool/
 .flutter-plugins
