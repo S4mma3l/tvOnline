@@ -45,6 +45,9 @@ jobs:
           sed -i '' "s|ANON_KEY_PLACEHOLDER|${{ secrets.SUPABASE_ANON_KEY }}|g" env.json
           sed -i '' "s|OBF_KEY_PLACEHOLDER|${{ secrets.STORAGE_OBFUSCATION_KEY }}|g" env.json
 
+      - name: Flutter pub get
+        run: flutter pub get
+
       - name: Install macOS pods
         run: cd macos && pod install --repo-update
 
