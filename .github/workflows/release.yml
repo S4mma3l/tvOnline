@@ -16,6 +16,7 @@ permissions:
 
 env:
   FLUTTER_VERSION: '3.41.9'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # ── macOS → builds macOS .app ─────────────────────────────────────────────────
 jobs:
