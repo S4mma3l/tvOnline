@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,6 +44,7 @@ class HomeScreen extends ConsumerWidget {
             // Hero Banner
             SliverToBoxAdapter(
               child: allVodAsync.when(
+                skipLoadingOnRefresh: false,
                 data: (_) => HeroBanner(items: heroItems),
                 loading: () => const ShimmerHero(),
                 error: (e, _) => _ErrorBanner(error: e.toString()),
@@ -568,49 +570,261 @@ class _ContinueCard extends StatelessWidget {
 }
 
 
-class _ErrorBanner extends ConsumerWidget {
+// ── Diagnostic result model ───────────────────────────────────────────────────
+
+class _DiagResult {
+  final String label;
+  final bool ok;
+  final String detail;
+  const _DiagResult(this.label, this.ok, this.detail);
+}
+
+// ── Error banner with retry + connection diagnostic ───────────────────────────
+
+class _ErrorBanner extends ConsumerStatefulWidget {
   final String error;
   const _ErrorBanner({required this.error});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ErrorBanner> createState() => _ErrorBannerState();
+}
+
+class _ErrorBannerState extends ConsumerState<_ErrorBanner> {
+  bool _diagRunning = false;
+  List<_DiagResult>? _diagResults;
+
+  String get _friendlyMessage {
+    final e = widget.error.toLowerCase();
+    if (e.contains('connection timeout') || e.contains('connecttimeout')) {
+      return 'El servidor tardó demasiado en responder.\nVerifica tu conexión a internet e intenta de nuevo.';
+    }
+    if (e.contains('receive timeout') || e.contains('receivetimeout')) {
+      return 'El servidor tardó demasiado en enviar los datos.\nIntenta de nuevo en unos momentos.';
+    }
+    if (e.contains('connection error') || e.contains('socketexception') ||
+        e.contains('failed host lookup')) {
+      return 'No se pudo conectar al servidor.\nVerifica que la URL del servidor sea correcta y que tengas internet.';
+    }
+    if (e.contains('401') || e.contains('403') || e.contains('unauthorized')) {
+      return 'Usuario o contraseña incorrectos.\nRevisa tus credenciales en Ajustes.';
+    }
+    if (e.contains('404')) {
+      return 'Servidor no encontrado.\nVerifica la URL en Ajustes.';
+    }
+    if (e.contains('500') || e.contains('502') || e.contains('503')) {
+      return 'El servidor IPTV está teniendo problemas.\nIntenta de nuevo más tarde.';
+    }
+    return 'No se pudo cargar el contenido.\nComprueba tu conexión e intenta de nuevo.';
+  }
+
+  void _retry() {
+    setState(() => _diagResults = null);
+    ref.invalidate(allVodProvider);
+    ref.invalidate(allSeriesProvider);
+    ref.invalidate(vodCategoriesProvider);
+    ref.invalidate(seriesCategoriesProvider);
+  }
+
+  Future<void> _runDiagnostic() async {
+    setState(() { _diagRunning = true; _diagResults = null; });
+
+    final results = <_DiagResult>[];
+    final config = ref.read(serverConfigProvider).valueOrNull;
+    final quickDio = Dio(BaseOptions(
+      connectTimeout: const Duration(seconds: 8),
+      receiveTimeout: const Duration(seconds: 8),
+    ));
+
+    // 1. Internet connectivity
+    try {
+      await quickDio.get('https://www.google.com');
+      results.add(const _DiagResult('Internet', true, 'Conexión disponible'));
+    } catch (_) {
+      try {
+        await quickDio.get('https://www.cloudflare.com');
+        results.add(const _DiagResult('Internet', true, 'Conexión disponible'));
+      } catch (_) {
+        results.add(const _DiagResult('Internet', false, 'Sin acceso a internet'));
+      }
+    }
+
+    if (config != null) {
+      // 2. Server reachability
+      try {
+        await quickDio.get(config.serverUrl);
+        results.add(const _DiagResult('Servidor IPTV', true, 'Servidor alcanzable'));
+      } on DioException catch (e) {
+        if (e.response != null) {
+          // Got a response (even 4xx) — server is reachable
+          results.add(_DiagResult(
+            'Servidor IPTV',
+            true,
+            'Servidor alcanzable (HTTP ${e.response!.statusCode})',
+          ));
+        } else {
+          final msg = e.type == DioExceptionType.connectionTimeout ||
+                  e.type == DioExceptionType.sendTimeout
+              ? 'Sin respuesta del servidor (timeout)'
+              : 'No se pudo alcanzar: ${config.serverUrl}';
+          results.add(_DiagResult('Servidor IPTV', false, msg));
+        }
+      }
+
+      // 3. Authentication
+      final api = ref.read(xtreamApiProvider);
+      if (api != null) {
+        try {
+          final authDio = Dio(BaseOptions(
+            connectTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 15),
+          ));
+          final url =
+              '${config.serverUrl}/player_api.php?username=${config.username}&password=${config.password}';
+          final resp = await authDio.get(url);
+          final userInfo = (resp.data as Map<String, dynamic>?)?['user_info']
+              as Map<String, dynamic>?;
+          final status = userInfo?['status']?.toString() ?? '?';
+          final expiry = userInfo?['exp_date']?.toString();
+          String detail = 'Credenciales válidas · Estado: $status';
+          if (expiry != null) {
+            final exp = DateTime.fromMillisecondsSinceEpoch(
+                int.parse(expiry) * 1000);
+            detail += ' · Vence: ${exp.day}/${exp.month}/${exp.year}';
+          }
+          results.add(_DiagResult(
+            'Autenticación',
+            status == 'Active',
+            detail,
+          ));
+        } on DioException catch (e) {
+          final msg = e.response?.statusCode == 401 || e.response?.statusCode == 403
+              ? 'Usuario o contraseña incorrectos'
+              : 'No se pudo autenticar con el servidor';
+          results.add(_DiagResult('Autenticación', false, msg));
+        } catch (_) {
+          results.add(const _DiagResult(
+              'Autenticación', false, 'Error al verificar credenciales'));
+        }
+      }
+    } else {
+      results.add(const _DiagResult(
+          'Configuración', false, 'No hay servidor configurado'));
+    }
+
+    if (mounted) setState(() { _diagRunning = false; _diagResults = results; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.5,
+      constraints: BoxConstraints(
+        minHeight: MediaQuery.of(context).size.height * 0.5,
+      ),
       color: AppColors.surface,
       child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.wifi_off_rounded,
-                size: 56, color: AppColors.textMuted),
-            const SizedBox(height: 16),
-            const Text('No se pudo cargar el contenido',
-                style: AppTextStyles.headlineSmall),
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(error,
-                  style: AppTextStyles.bodySmall,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off_rounded,
+                  size: 56, color: AppColors.textMuted),
+              const SizedBox(height: 16),
+              const Text('No se pudo cargar el contenido',
+                  style: AppTextStyles.headlineSmall,
                   textAlign: TextAlign.center),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () {
-                ref.invalidate(allVodProvider);
-                ref.invalidate(allSeriesProvider);
-              },
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Reintentar'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+              const SizedBox(height: 8),
+              Text(
+                _friendlyMessage,
+                style: AppTextStyles.bodySmall,
+                textAlign: TextAlign.center,
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+
+              // Retry button
+              ElevatedButton.icon(
+                onPressed: _retry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Reintentar'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(160, 44),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Diagnostic button
+              TextButton.icon(
+                onPressed: _diagRunning ? null : _runDiagnostic,
+                icon: _diagRunning
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.textMuted,
+                        ),
+                      )
+                    : const Icon(Icons.network_check_rounded,
+                        size: 16, color: AppColors.textMuted),
+                label: Text(
+                  _diagRunning ? 'Verificando...' : 'Diagnóstico de conexión',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textMuted),
+                ),
+              ),
+
+              // Diagnostic results
+              if (_diagResults != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _diagResults!.map((r) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            r.ok
+                                ? Icons.check_circle_rounded
+                                : Icons.cancel_rounded,
+                            size: 18,
+                            color: r.ok ? AppColors.success : AppColors.error,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(r.label,
+                                    style: AppTextStyles.labelMedium.copyWith(
+                                      color: r.ok
+                                          ? AppColors.success
+                                          : AppColors.error,
+                                    )),
+                                Text(r.detail,
+                                    style: AppTextStyles.bodySmall),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )).toList(),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

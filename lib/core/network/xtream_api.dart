@@ -16,7 +16,7 @@ class XtreamApi {
     required this.password,
   }) : _dio = Dio(
           BaseOptions(
-            connectTimeout: const Duration(seconds: 20),
+            connectTimeout: const Duration(seconds: 45),
             receiveTimeout: const Duration(minutes: 3), // 30K items JSON needs time
             headers: {'Accept': 'application/json'},
           ),
