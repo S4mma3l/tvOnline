@@ -11,6 +11,7 @@ import '../providers/home_provider.dart';
 import '../widgets/hero_banner.dart';
 import '../widgets/content_carousel.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../profiles/providers/profiles_provider.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -246,22 +247,8 @@ class HomeScreen extends ConsumerWidget {
           tooltip: 'Mi lista',
           onPressed: () => context.push('/watchlist'),
         ),
-        GestureDetector(
-          onTap: () => context.push('/settings'),
-          child: Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: CircleAvatar(
-              radius: 17,
-              backgroundColor: AppColors.primary,
-              child: Text(
-                username?.isNotEmpty == true
-                    ? username![0].toUpperCase()
-                    : 'U',
-                style: AppTextStyles.titleMedium,
-              ),
-            ),
-          ),
-        ),
+        _ProfileAvatar(onTap: () => context.push('/settings')),
+        const SizedBox(width: 4),
       ],
     );
   }
@@ -569,6 +556,38 @@ class _ContinueCard extends StatelessWidget {
   }
 }
 
+
+// ── Profile avatar in app bar ─────────────────────────────────────────────────
+
+class _ProfileAvatar extends ConsumerWidget {
+  final VoidCallback onTap;
+  const _ProfileAvatar({required this.onTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(activeProfileProvider);
+    final profiles = ref.watch(profilesListProvider);
+
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: profiles.length > 1
+          ? () => context.push('/profiles')
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: CircleAvatar(
+          radius: 17,
+          backgroundColor: profile?.color ?? AppColors.primary,
+          child: Text(
+            profile?.initials ?? 'U',
+            style: AppTextStyles.titleMedium
+                .copyWith(color: Colors.white, fontSize: 13),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 // ── Diagnostic result model ───────────────────────────────────────────────────
 

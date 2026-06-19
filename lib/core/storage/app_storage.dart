@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
+import '../../shared/models/profile_model.dart';
 
 // CWE-312: Simple XOR obfuscation for stored credentials.
 // Prevents credentials from being trivially readable in storage files.
@@ -34,6 +35,9 @@ String _deobfuscate(String value) {
 class AppStorage {
   static SharedPreferences? _prefs;
 
+  // Active profile — 'default' uses existing keys (backward compat)
+  static String _activeProfileId = 'default';
+
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
   }
@@ -41,6 +45,53 @@ class AppStorage {
   static SharedPreferences get _p {
     assert(_prefs != null, 'AppStorage.init() must be called first');
     return _prefs!;
+  }
+
+  // Profile-scoped key: default profile uses bare keys for backward compat
+  static String _pk(String key) =>
+      _activeProfileId == 'default' ? key : '${_activeProfileId}_$key';
+
+  // ── Profiles ───────────────────────────────────────────────────────────────
+
+  static const _keyProfiles = 'profiles_v2';
+
+  static String get activeProfileId => _activeProfileId;
+
+  static void setActiveProfile(String profileId) {
+    _activeProfileId = profileId;
+  }
+
+  static List<ProfileModel> get profiles {
+    final raw = _p.getString(_keyProfiles);
+    if (raw == null) {
+      return [const ProfileModel(id: 'default', name: 'Principal', colorIndex: 0)];
+    }
+    final list = jsonDecode(raw) as List;
+    return list
+        .map((e) => ProfileModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  static Future<void> saveProfile(ProfileModel profile) async {
+    final list = profiles;
+    final idx = list.indexWhere((p) => p.id == profile.id);
+    if (idx >= 0) {
+      list[idx] = profile;
+    } else {
+      list.add(profile);
+    }
+    await _p.setString(
+        _keyProfiles, jsonEncode(list.map((p) => p.toJson()).toList()));
+  }
+
+  static Future<void> deleteProfile(String profileId) async {
+    if (profileId == 'default') return;
+    final list = profiles..removeWhere((p) => p.id == profileId);
+    await _p.setString(
+        _keyProfiles, jsonEncode(list.map((p) => p.toJson()).toList()));
+    // Remove all profile-scoped data
+    final keys = _p.getKeys().where((k) => k.startsWith('${profileId}_')).toList();
+    for (final k in keys) await _p.remove(k);
   }
 
   // ── Server config ─────────────────────────────────────────────────────────
@@ -110,19 +161,19 @@ class AppStorage {
   // ── Watchlist ─────────────────────────────────────────────────────────────
 
   static List<String> get watchlist =>
-      _p.getStringList(AppConstants.keyWatchlist) ?? [];
+      _p.getStringList(_pk(AppConstants.keyWatchlist)) ?? [];
 
   static Future<void> addToWatchlist(String id) async {
     final list = watchlist;
     if (!list.contains(id)) {
       list.add(id);
-      await _p.setStringList(AppConstants.keyWatchlist, list);
+      await _p.setStringList(_pk(AppConstants.keyWatchlist), list);
     }
   }
 
   static Future<void> removeFromWatchlist(String id) async {
     final list = watchlist..remove(id);
-    await _p.setStringList(AppConstants.keyWatchlist, list);
+    await _p.setStringList(_pk(AppConstants.keyWatchlist), list);
   }
 
   static bool isInWatchlist(String id) => watchlist.contains(id);
@@ -130,7 +181,7 @@ class AppStorage {
   // ── Watch progress (position only) ───────────────────────────────────────
 
   static Map<String, dynamic> get _watchProgress {
-    final raw = _p.getString(AppConstants.keyWatchHistory);
+    final raw = _p.getString(_pk(AppConstants.keyWatchHistory));
     if (raw == null) return {};
     return jsonDecode(raw) as Map<String, dynamic>;
   }
@@ -146,7 +197,7 @@ class AppStorage {
       'duration': durationSeconds,
       'updatedAt': DateTime.now().toIso8601String(),
     };
-    await _p.setString(AppConstants.keyWatchHistory, jsonEncode(map));
+    await _p.setString(_pk(AppConstants.keyWatchHistory), jsonEncode(map));
   }
 
   static Map<String, dynamic>? getWatchProgress(String key) =>
@@ -154,8 +205,10 @@ class AppStorage {
 
   // ── Rich watch history (with title, poster, metadata) ────────────────────
 
-  static const _keyHistory = 'watch_history_rich';
+  static const _keyHistoryBase = 'watch_history_rich';
   static const int _maxHistory = 50;
+
+  static String get _keyHistory => _pk(_keyHistoryBase);
 
   static List<WatchHistoryEntry> get watchHistory {
     final raw = _p.getString(_keyHistory);
@@ -190,10 +243,10 @@ class AppStorage {
 
   // ── Per-content track settings (audio + subtitle per watchKey) ────────────
 
-  static const _keyTrackSettings = 'track_settings_';
+  static const _keyTrackSettingsBase = 'track_settings_';
 
   static ContentTrackSettings? getTrackSettings(String watchKey) {
-    final raw = _p.getString('$_keyTrackSettings$watchKey');
+    final raw = _p.getString(_pk('$_keyTrackSettingsBase$watchKey'));
     if (raw == null) return null;
     return ContentTrackSettings.fromJson(
         jsonDecode(raw) as Map<String, dynamic>);
@@ -202,7 +255,7 @@ class AppStorage {
   static Future<void> saveTrackSettings(
       String watchKey, ContentTrackSettings settings) async {
     await _p.setString(
-        '$_keyTrackSettings$watchKey', jsonEncode(settings.toJson()));
+        _pk('$_keyTrackSettingsBase$watchKey'), jsonEncode(settings.toJson()));
   }
 
   // ── Global playback settings ──────────────────────────────────────────────

@@ -155,6 +155,7 @@ class _SeriesCatalogScreenState extends ConsumerState<SeriesCatalogScreen> {
 
             return GridView.builder(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+              cacheExtent: 800,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: _crossAxisCount(width),
                 childAspectRatio: 0.6,

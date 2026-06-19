@@ -8,6 +8,9 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../home/providers/home_provider.dart';
+import '../../profiles/providers/profiles_provider.dart';
+import '../../../shared/models/profile_model.dart';
+import '../../profiles/screens/profile_selector_screen.dart';
 
 final _appVersionProvider = FutureProvider<String>((ref) async {
   final info = await PackageInfo.fromPlatform();
@@ -43,6 +46,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Perfiles
+          const _SectionHeader(title: 'Perfiles'),
+          _ProfilesTile(ref: ref),
+
+          const SizedBox(height: 24),
+
           // Mi cuenta
           const _SectionHeader(title: 'Mi cuenta'),
           _OptionTile(
@@ -358,6 +367,210 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 style: TextStyle(color: AppColors.error)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Profiles tile ─────────────────────────────────────────────────────────────
+
+class _ProfilesTile extends ConsumerWidget {
+  final WidgetRef ref;
+  const _ProfilesTile({required this.ref});
+
+  @override
+  Widget build(BuildContext context, WidgetRef widgetRef) {
+    final profiles = widgetRef.watch(profilesListProvider);
+    final active = widgetRef.watch(activeProfileProvider);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.cardHover, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.people_rounded, size: 20, color: AppColors.textMuted),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text('Perfiles', style: AppTextStyles.titleMedium),
+              ),
+              GestureDetector(
+                onTap: () => _showAddDialog(context, widgetRef, profiles.length),
+                child: profiles.length < 5
+                    ? const Icon(Icons.add_rounded,
+                        size: 22, color: AppColors.primary)
+                    : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: profiles.map((p) {
+              final isActive = p.id == active?.id;
+              return GestureDetector(
+                onTap: () {
+                  AppStorage.setActiveProfile(p.id);
+                  widgetRef.read(profilesRefreshProvider.notifier).state++;
+                  widgetRef.read(historyRefreshProvider.notifier).state++;
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Perfil: ${p.name}'),
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 1),
+                  ));
+                },
+                onLongPress: () => _showProfileOptions(context, widgetRef, p, profiles.length),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: p.color,
+                        borderRadius: BorderRadius.circular(10),
+                        border: isActive
+                            ? Border.all(color: Colors.white, width: 2.5)
+                            : null,
+                      ),
+                      child: Center(
+                        child: Text(p.initials,
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16)),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(p.name,
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: isActive ? AppColors.primary : AppColors.textSecondary,
+                          fontWeight: isActive ? FontWeight.w700 : FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+          if (profiles.length > 1) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () => context.push('/profiles'),
+              child: Text('Cambiar perfil',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.primary)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showAddDialog(BuildContext context, WidgetRef ref, int count) {
+    showDialog(
+      context: context,
+      builder: (_) => ProfileFormDialog(
+        title: 'Nuevo perfil',
+        initialColorIndex: count % ProfileModel.avatarColors.length,
+        onSave: (name, colorIndex) async {
+          final id = 'profile_${DateTime.now().millisecondsSinceEpoch}';
+          await AppStorage.saveProfile(
+              ProfileModel(id: id, name: name, colorIndex: colorIndex));
+          ref.read(profilesRefreshProvider.notifier).state++;
+        },
+      ),
+    );
+  }
+
+  void _showProfileOptions(BuildContext context, WidgetRef ref,
+      ProfileModel profile, int total) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: AppColors.textMuted,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.edit_rounded),
+              title: const Text('Editar nombre y color'),
+              onTap: () {
+                Navigator.pop(ctx);
+                showDialog(
+                  context: context,
+                  builder: (_) => ProfileFormDialog(
+                    title: 'Editar perfil',
+                    initialName: profile.name,
+                    initialColorIndex: profile.colorIndex,
+                    onSave: (name, colorIndex) async {
+                      await AppStorage.saveProfile(
+                          profile.copyWith(name: name, colorIndex: colorIndex));
+                      ref.read(profilesRefreshProvider.notifier).state++;
+                    },
+                  ),
+                );
+              },
+            ),
+            if (total > 1)
+              ListTile(
+                leading: Icon(Icons.delete_rounded, color: AppColors.error),
+                title: Text('Eliminar perfil',
+                    style: TextStyle(color: AppColors.error)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showDialog(
+                    context: context,
+                    builder: (d) => AlertDialog(
+                      title: Text('Eliminar "${profile.name}"'),
+                      content: const Text(
+                          'Se eliminará el historial, lista y progreso de este perfil.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(d),
+                          child: const Text('Cancelar'),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(d);
+                            await AppStorage.deleteProfile(profile.id);
+                            if (AppStorage.activeProfileId == profile.id) {
+                              final remaining = AppStorage.profiles;
+                              AppStorage.setActiveProfile(remaining.first.id);
+                            }
+                            ref.read(profilesRefreshProvider.notifier).state++;
+                            ref.read(historyRefreshProvider.notifier).state++;
+                          },
+                          child: Text('Eliminar',
+                              style: TextStyle(color: AppColors.error)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

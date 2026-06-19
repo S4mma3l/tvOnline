@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../core/storage/app_storage.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/server_config_screen.dart';
 import '../../features/home/screens/home_screen.dart';
@@ -17,20 +18,36 @@ import '../../features/suggestions/screens/suggestions_screen.dart';
 import '../../features/admin/screens/admin_screen.dart';
 import '../../features/watchlist/screens/watchlist_screen.dart';
 import '../../features/history/screens/history_screen.dart';
+import '../../features/profiles/screens/profile_selector_screen.dart';
+import '../../features/profiles/providers/profiles_provider.dart';
 import '../../shared/widgets/main_scaffold.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(serverConfigProvider);
+  ref.watch(profileSelectedProvider);
 
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
       if (authState.isLoading) return null;
       final isConfigured = authState.valueOrNull != null;
-      final isAuthRoute = state.matchedLocation == '/setup';
+      final loc = state.matchedLocation;
 
-      if (!isConfigured && !isAuthRoute) return '/setup';
-      if (isConfigured && isAuthRoute) return '/';
+      if (!isConfigured) return loc == '/setup' ? null : '/setup';
+      if (loc == '/setup') return '/';
+
+      // Show profile selector when multiple profiles exist and none selected yet
+      if (loc != '/profiles') {
+        final profiles = AppStorage.profiles;
+        final profileSelected = ref.read(profileSelectedProvider);
+        if (profiles.length > 1 && !profileSelected) return '/profiles';
+        // Auto-select single profile without showing selector
+        if (profiles.length == 1 && !profileSelected) {
+          AppStorage.setActiveProfile(profiles.first.id);
+          ref.read(profileSelectedProvider.notifier).state = true;
+        }
+      }
+
       return null;
     },
     routes: [
@@ -38,6 +55,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/setup',
         name: 'setup',
         builder: (_, __) => const ServerConfigScreen(),
+      ),
+
+      GoRoute(
+        path: '/profiles',
+        name: 'profiles',
+        builder: (_, __) => const ProfileSelectorScreen(),
       ),
 
       // Main shell with bottom nav

@@ -57,7 +57,8 @@ class _ContentCardState extends State<ContentCard>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return RepaintBoundary(
+      child: GestureDetector(
       onTapDown: (_) => _ctrl.forward(),
       onTapUp: (_) {
         _ctrl.reverse();
@@ -88,6 +89,7 @@ class _ContentCardState extends State<ContentCard>
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -141,7 +143,8 @@ class _GridCardState extends State<GridCard>
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return RepaintBoundary(
+      child: GestureDetector(
       onTapDown: (_) => _ctrl.forward(),
       onTapUp: (_) {
         _ctrl.reverse();
@@ -270,6 +273,7 @@ class _GridCardState extends State<GridCard>
           ),
         ),
       ),
+    ),
     );
   }
 
