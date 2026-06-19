@@ -1,7 +1,7 @@
 name: tvonline
 description: Premium streaming platform — Movies, Series & Live TV
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.3+4
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

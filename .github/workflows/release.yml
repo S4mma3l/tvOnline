@@ -208,6 +208,13 @@ jobs:
 
             Aplicación de streaming IPTV disponible para iOS, macOS, Android y Windows.
 
+            ## ✨ Novedades en esta versión
+
+            - **Perfiles múltiples** — hasta 5 perfiles por cuenta, cada uno con historial, lista y progreso independiente (como Netflix). Pantalla "¿Quién está viendo?" al abrir la app. Gestión completa desde Ajustes.
+            - **Rendimiento mejorado** — `RepaintBoundary` en tarjetas del catálogo y precarga de scroll (`cacheExtent`) para navegación más fluida.
+            - **Diagnóstico de conexión** — herramienta integrada que verifica internet, alcanzabilidad del servidor y autenticación cuando hay errores.
+            - **Mensajes de error amigables** — los errores de conexión se muestran en español en lugar de texto técnico.
+
             ---
 
             ## 📱 iOS — iPhone / iPad
